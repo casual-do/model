@@ -793,13 +793,13 @@
                 document.getElementById('toggleFileList').classList.remove('active');
                 document.getElementById('currentFile').textContent = f.name;
                 document.getElementById('currentFile').classList.remove('hidden');
-                saved.lastFile = f.name;
+                saved.lastFile = f.name.replace(/\.(json|txt)$/i, '');
                 flushSettings();
             });
             listEl.appendChild(chip);
         });
         const chips = listEl.querySelectorAll('.file-chip');
-        const last = saved.lastFile;
+        const last = saved.lastFile ? saved.lastFile.replace(/\.(json|txt)$/i, '') : '';
         if (last) {
             const found = Array.from(chips).find(c => c.textContent === last);
             if (found) { found.click(); return; }
