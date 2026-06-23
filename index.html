@@ -270,6 +270,15 @@
             break-inside: avoid;
             margin-bottom: 16px;
         }
+        .cgrid.flex {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: flex-start;
+        }
+        .cgrid.flex > * {
+            flex: 0 0 auto;
+        }
 
         /* 紧凑卡片，拟态效果 */
         .ccard {
@@ -492,7 +501,7 @@
         <div class="tab" data-view="part">部位</div>
         <div class="tab" data-view="panel">板件</div>
         <div id="bgToggle" class="neu-btn" title="切换明暗背景">白</div>
-        <div id="layoutToggle" class="neu-btn" title="切换横排/竖排">竖</div>
+        <div id="layoutToggle" class="neu-btn" title="切换布局">竖</div>
     </div>
 </div>
 
@@ -687,15 +696,20 @@
 
     function toggleLayout() {
         const btn = document.getElementById('layoutToggle');
-        const isH = btn.classList.toggle('active');
-        btn.textContent = isH ? '横' : '竖';
-        document.getElementById('viewCompact').classList.toggle('horizontal', isH);
-        saved.layoutH = isH ? '1' : '0';
+        const el = document.getElementById('viewCompact');
+        const cur = saved.layoutH || '0';
+        const next = cur === '0' ? '1' : cur === '1' ? '2' : '0';
+        el.classList.remove('horizontal', 'flex');
+        if (next === '1') { el.classList.add('horizontal'); btn.textContent = '紧'; }
+        else if (next === '2') { el.classList.add('flex'); btn.textContent = '横'; }
+        else btn.textContent = '竖';
+        saved.layoutH = next;
     }
 
     function applySavedSettings() {
         applyBg(saved.bgMode || 'light');
-        if (saved.layoutH === '1') toggleLayout();
+        const h = saved.layoutH || '0';
+        if (h !== '0') toggleLayout();
     }
 
     document.getElementById('bgToggle').addEventListener('click', () => {
