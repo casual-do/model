@@ -476,7 +476,6 @@
 <div class="header">
     <div id="toggleFileList" class="neu-btn">文件列表</div>
     <div id="currentFile" class="hidden"></div>
-    <div id="settingsStatus" class="neu-btn" title="点击选择设置文件">设置</div>
     <div class="tabs">
         <div id="statsBar" class="total-badge hidden"></div>
         <div class="tab active" data-view="compact">通用</div>
@@ -494,12 +493,40 @@
         <div id="viewPanel" class="grid hidden"></div>
     </div>
     <div id="sidebar" class="sidebar hidden">
-        <button id="selectFolder" class="neu-btn" style="width:100%;margin-bottom:8px">选择文件夹</button>
+        <div id="folderRow" style="display:flex;gap:4px;margin-bottom:8px;width:100%">
+            <div id="folderPathDisplay" class="neu-btn" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left" title="点击修改文件夹路径">📁 未配置</div>
+            <button id="reloadFolderBtn" class="neu-btn" title="刷新文件列表">↻</button>
+        </div>
         <div id="fileList"></div>
     </div>
 </div>
 
-<script src="modeljson/__files__.js"></script>
+<div id="folderDialog" class="folder-dialog hidden">
+    <div class="folder-dialog-content">
+        <div style="font-weight:bold;margin-bottom:8px">模型文件夹路径</div>
+        <div style="display:flex;gap:4px;margin-bottom:8px">
+            <input id="folderPathInput" type="text" style="flex:1;padding:5px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:inherit" placeholder="D:\models\gundam">
+            <button id="browseFolderBtn" class="neu-btn">浏览</button>
+        </div>
+        <div style="display:flex;gap:4px;justify-content:flex-end">
+            <button id="folderDialogCancel" class="neu-btn">取消</button>
+            <button id="folderDialogOk" class="neu-btn" style="background:var(--accent,#1677ff);color:#fff">确定</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.folder-dialog {
+    position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.3);
+    display:flex;align-items:center;justify-content:center;
+}
+.folder-dialog.hidden { display:none !important; }
+.folder-dialog-content {
+    background:var(--page-bg,#f0f2f5);padding:16px;border-radius:8px;
+    box-shadow:0 4px 24px rgba(0,0,0,0.2);min-width:360px;max-width:90vw;
+    color:var(--text-color,#333);
+}
+</style>
 <script>
     const COLOR_POOL = [
         '#e6194b', '#f58231', '#e68a00', '#cca300',
@@ -528,7 +555,6 @@
         btn.classList.toggle('active', !hidden);
     });
 
-    // 点击页面其他区域时隐藏文件列表
     document.addEventListener('click', e => {
         const sidebar = document.getElementById('sidebar');
         const btn = document.getElementById('toggleFileList');
@@ -540,153 +566,164 @@
         }
     });
 
-    // ---- 设置存储：先读 localStorage 兜底，再尝试通过 FSA 连接 JSON 文件 ----
-    const LSET_KEY = 'qjb-saved';
-    const saved = (() => { try { return JSON.parse(localStorage.getItem(LSET_KEY)) || {}; } catch { return {}; } })();
-    function fallbackSave() { try { localStorage.setItem(LSET_KEY, JSON.stringify(saved)); } catch {} }
+    // ════════════════════════════════════════════════
+    //  FSA — 单个 settings.json 读写（与日历记事本一致）
+    // ════════════════════════════════════════════════
+    const FSA_OK = 'showOpenFilePicker' in window;
+    const FILE_TYPES = [{ description: '设置文件', accept: { 'application/json': ['.json'] } }];
 
     let settingsHandle = null;
+    let saved = { folderPath: '', bgMode: 'light', layoutH: '0', lastFile: '' };
 
-    // 用同一个 IDB 库（folderHandles/handles）多存一个 key
-    const SETTINGS_HANDLE_KEY = 'settingsHandle';
-    async function saveSettingsHandle(handle) {
-        const db = await openDB();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(handle, SETTINGS_HANDLE_KEY);
-        await new Promise(r => { tx.oncomplete = r; });
+    // IndexedDB
+    function openIDB() {
+        return new Promise((res, rej) => {
+            const req = indexedDB.open('qjb-settings', 1);
+            req.onupgradeneeded = e => e.target.result.createObjectStore('kv');
+            req.onsuccess = e => res(e.target.result);
+            req.onerror = () => rej(req.error);
+        });
     }
-    async function loadSettingsHandle() {
-        const db = await openDB();
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).get(SETTINGS_HANDLE_KEY);
-        return new Promise((resolve, reject) => {
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
+    async function idbSet(key, val) {
+        const db = await openIDB();
+        return new Promise((res, rej) => {
+            const tx = db.transaction('kv', 'readwrite');
+            tx.objectStore('kv').put(val, key);
+            tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+        });
+    }
+    async function idbGet(key) {
+        const db = await openIDB();
+        return new Promise((res, rej) => {
+            const tx = db.transaction('kv', 'readonly');
+            const req = tx.objectStore('kv').get(key);
+            req.onsuccess = () => res(req.result);
+            req.onerror = () => rej(req.error);
         });
     }
 
-    const SETTINGS_FILE_TYPES = [{ description: '设置 JSON 文件', accept: { 'application/json': ['.json'] } }];
-
-    async function flushSettings() {
-        if (settingsHandle) {
-            try {
-                const w = await settingsHandle.createWritable();
-                await w.write(JSON.stringify(saved, null, 2));
-                await w.close();
-                return;
-            } catch { /* fall through to localStorage */ }
-        }
-        fallbackSave();
+    function mkEl(tag, cls, props = {}) {
+        const el = document.createElement(tag);
+        if (cls) el.className = cls;
+        Object.assign(el, props);
+        return el;
+    }
+    function mkBtn(text, onClick, primary = false) {
+        const btn = document.createElement('button');
+        btn.className = 'neu-btn' + (primary ? ' active' : '');
+        btn.textContent = text;
+        btn.addEventListener('click', onClick);
+        return btn;
     }
 
-    async function connectSettingsFile(handle, storeToIDB = true) {
+    // 连接 settings.json
+    async function connectSettings(handle, storeToIDB = true) {
         settingsHandle = handle;
-        if (storeToIDB) await saveSettingsHandle(handle);
-        updateSettingsBar();
+        if (storeToIDB) await idbSet('settings-handle', handle);
+        const file = await handle.getFile();
+        const text = (await file.text()).trim();
         try {
-            const file = await handle.getFile();
-            const text = (await file.text()).trim();
-            if (text) {
-                const data = JSON.parse(text);
-                Object.assign(saved, data);
-            }
-        } catch { /* use existing saved */ }
+            const data = text ? JSON.parse(text) : {};
+            Object.assign(saved, data);
+        } catch (e) { /* 保持默认值 */ }
         applySavedSettings();
+        updateFileBar();
+        // 尝试恢复数据目录
+        tryLoadDataDir();
     }
 
-    function applySavedSettings() {
-        applyBg(saved.bgMode || 'light');
-        if (saved.layoutH === '1' && !document.getElementById('layoutToggle').classList.contains('active')) {
-            toggleLayout();
-        }
+    // 将当前配置写回 settings.json
+    async function flushSettings() {
+        if (!settingsHandle) return;
+        try {
+            const w = await settingsHandle.createWritable();
+            await w.write(JSON.stringify(saved, null, 2));
+            await w.close();
+        } catch (e) { /* 权限丢失 */ }
     }
 
+    // 打开已有文件
     async function pickSettingsFile() {
-        if (!window.showOpenFilePicker) return;
         try {
-            const [h] = await window.showOpenFilePicker({ types: SETTINGS_FILE_TYPES, multiple: false });
-            await connectSettingsFile(h);
-        } catch { /* 用户取消 */ }
+            const [h] = await window.showOpenFilePicker({ types: FILE_TYPES, multiple: false });
+            await connectSettings(h);
+        } catch (e) { /* 用户取消 */ }
     }
 
+    // 新建 settings.json
     async function createSettingsFile() {
-        if (!window.showSaveFilePicker) return;
         try {
-            const h = await window.showSaveFilePicker({
-                suggestedName: 'qjb-settings.json',
-                types: SETTINGS_FILE_TYPES
-            });
+            const h = await window.showSaveFilePicker({ suggestedName: 'settings.json', types: FILE_TYPES });
             const w = await h.createWritable();
             await w.write(JSON.stringify(saved, null, 2));
             await w.close();
-            await connectSettingsFile(h);
-        } catch { /* 用户取消 */ }
+            await connectSettings(h);
+        } catch (e) { /* 用户取消 */ }
     }
 
-    function updateSettingsBar() {
-        const el = document.getElementById('settingsStatus');
-        if (!window.showOpenFilePicker) {
-            el.textContent = '设置';
-            el.title = '浏览器不支持文件系统 API，设置保存在 localStorage';
-            el.style.opacity = '0.5';
+    // 重新授权
+    async function reconnectSettings(handle) {
+        try {
+            const perm = await handle.requestPermission({ mode: 'readwrite' });
+            if (perm === 'granted') await connectSettings(handle, false);
+            else updateFileBar();
+        } catch (e) { updateFileBar(); }
+    }
+
+    // 文件状态栏（与日历记事本一致）
+    function updateFileBar() {
+        const bar = document.getElementById('file-status');
+        if (!bar) return;
+        bar.innerHTML = '';
+        if (!FSA_OK) {
+            bar.append(mkEl('span', 'fb-dot red'), mkEl('span', '', { textContent: '浏览器不支持 File System API' }));
             return;
         }
-        if (settingsHandle) {
-            el.textContent = '✓ ' + settingsHandle.name;
-            el.title = '点击更换设置文件';
-            el.style.opacity = '1';
-        } else {
-            el.textContent = '⚙ 设置';
-            el.title = '点击选择设置文件';
-            el.style.opacity = '0.7';
+        if (!settingsHandle) {
+            bar.append(mkEl('span', 'fb-dot orange'), mkEl('span', '', { textContent: '未选择配置文件' }),
+                mkBtn('打开', pickSettingsFile), mkBtn('新建', createSettingsFile, true));
+            return;
         }
+        bar.append(mkEl('span', 'fb-dot green'), mkEl('span', '', { textContent: settingsHandle.name }));
     }
-
-    document.getElementById('settingsStatus').addEventListener('click', () => {
-        if (!window.showOpenFilePicker) return;
-        if (settingsHandle) {
-            pickSettingsFile();
-        } else {
-            setTimeout(() => {
-                const action = confirm('点击"确定"选择已有设置文件，点击"取消"新建设置文件');
-                if (action) pickSettingsFile();
-                else createSettingsFile();
-                updateSettingsBar();
-            }, 50);
-        }
-    });
 
     const LIGHT_BG = '#f0f2f5', DARK_BG = '#1e1e1e';
 
     function applyBg(mode) {
-        const isLight = mode === 'light';
-        const hex = isLight ? LIGHT_BG : DARK_BG;
-        document.body.style.background = hex;
+        const isLight = mode !== 'dark';
+        document.body.style.background = isLight ? LIGHT_BG : DARK_BG;
         document.getElementById('bgToggle').textContent = isLight ? '🌙' : '☀️';
-        saved.bgMode = mode;
-        document.documentElement.style.setProperty('--page-bg', hex);
+        saved.bgMode = isLight ? 'light' : 'dark';
+        document.documentElement.style.setProperty('--page-bg', isLight ? LIGHT_BG : DARK_BG);
         document.documentElement.style.setProperty('--text-color', isLight ? '#333' : '#e0e0e0');
         document.documentElement.style.setProperty('--accent', isLight ? '#1677ff' : '#66b0ff');
-        flushSettings();
     }
 
-    applyBg(saved.bgMode || 'light');
-    document.getElementById('bgToggle').addEventListener('click', e => {
-        const next = (saved.bgMode || 'light') === 'light' ? 'dark' : 'light';
-        applyBg(next);
-    });
-    // 横排/竖排切换（仅通用视图）
     function toggleLayout() {
         const btn = document.getElementById('layoutToggle');
         const isH = btn.classList.toggle('active');
         btn.textContent = isH ? '↔' : '↕';
         document.getElementById('viewCompact').classList.toggle('horizontal', isH);
         saved.layoutH = isH ? '1' : '0';
-        flushSettings();
     }
-    // 恢复上次的横排/竖排设置
-    if (saved.layoutH === '1') toggleLayout();
-    document.getElementById('layoutToggle').addEventListener('click', toggleLayout);
+
+    function applySavedSettings() {
+        applyBg(saved.bgMode || 'light');
+        if (saved.layoutH === '1') toggleLayout();
+        const p = saved.folderPath || '';
+        document.getElementById('folderPathDisplay').textContent = p ? '📁 ' + p : '📁 未配置';
+        document.getElementById('folderPathDisplay').title = p;
+    }
+
+    document.getElementById('bgToggle').addEventListener('click', () => {
+        applyBg((saved.bgMode || 'light') === 'light' ? 'dark' : 'light');
+        flushSettings();
+    });
+    document.getElementById('layoutToggle').addEventListener('click', () => {
+        toggleLayout();
+        flushSettings();
+    });
+
     // Tab 切换
     const VIEWS = ['compact', 'part', 'panel'];
     document.querySelectorAll('.tab').forEach(tab => {
@@ -697,136 +734,70 @@
         });
     });
 
-    // 字号滑动条
-    const root = document.documentElement;
-    document.getElementById('sizeSlider')?.addEventListener('input', e => {
-        document.getElementById('sizeVal').textContent = e.target.value;
-    });
+    // ════════════════════════════════════════════════
+    //  数据文件夹加载（拖拽 / 按钮 / FSA showDirectoryPicker）
+    // ════════════════════════════════════════════════
+    let allFiles = [];
 
-    // 手动选择文件（备用）
-    //document.getElementById('fileInput').addEventListener('change', e => {
-    //    const file = e.target.files[0];
-    //    if (!file) return;
-    //    const reader = new FileReader();
-    //    reader.onload = ev => {
-    //        try {
-    //            render(extractItems(JSON.parse(/** @type {string} */(ev.target.result))));
-    //        } catch {
-    //            alert('JSON 解析失败');
-    //        }
-    //    };
-    //    reader.readAsText(file, 'utf-8');
-    //});
-
-    // 通过 <script> 标签动态加载数据（兼容 file:// 协议）
-    function loadData(jsFile) {
+    function readFileAsText(file) {
         return new Promise((resolve, reject) => {
-            window.__MODEL_DATA__ = null;
-            const script = document.createElement('script');
-            script.src = 'modeljson/__data__/' + jsFile;
-            script.charset = 'UTF-8';
-            script.onload = () => {
-                if (window.__MODEL_DATA__) {
-                    resolve(window.__MODEL_DATA__);
-                    window.__MODEL_DATA__ = null;
-                } else {
-                    reject(new Error('No data loaded'));
-                }
-            };
-            script.onerror = () => reject(new Error('Failed to load ' + jsFile));
-            document.head.appendChild(script);
+            const r = new FileReader();
+            r.onload = () => resolve(r.result);
+            r.onerror = reject;
+            r.readAsText(file);
         });
     }
 
-    function showDefaultFiles() {
-        const files = window.__MODEL_FILES__;
+    function processEntry(entry) {
+        return new Promise(resolve => {
+            if (entry.isFile) {
+                entry.file(async file => {
+                    if (!/\.(json|txt)$/i.test(file.name)) { resolve([]); return; }
+                    const text = await readFileAsText(file);
+                    try { resolve([{ name: file.name, data: JSON.parse(text.trim() || '{}') }]); }
+                    catch { resolve([]); }
+                }, () => resolve([]));
+            } else if (entry.isDirectory) {
+                const reader = entry.createReader();
+                const all = [];
+                function readBatch() {
+                    reader.readEntries(async entries => {
+                        if (!entries.length) { resolve(all.flat()); return; }
+                        const batch = await Promise.all(Array.from(entries).map(processEntry));
+                        all.push(...batch.flat());
+                        readBatch();
+                    }, () => resolve(all.flat()));
+                }
+                readBatch();
+            } else resolve([]);
+        });
+    }
+
+    async function setFolderFiles(files) {
+        allFiles = files;
         const listEl = document.getElementById('fileList');
         listEl.innerHTML = '';
-
-        if (!files || files.length === 0) {
-            listEl.innerHTML = '<span style="color:#bbb;font-size:12px">modeljson/ 目录下暂无文件</span>';
+        if (!files.length) {
+            listEl.innerHTML = '<div style="padding:20px 8px;text-align:center;color:#999;font-size:12px">文件夹中没有 JSON/TXT 文件</div>';
             return;
         }
-
-        files.forEach(item => {
+        files.forEach(f => {
             const chip = document.createElement('div');
             chip.className = 'file-chip';
-            chip.textContent = item.name;
+            chip.textContent = f.name.replace(/\.(json|txt)$/i, '');
             chip.addEventListener('click', () => {
                 document.querySelectorAll('.file-chip').forEach(c => c.classList.remove('active'));
                 chip.classList.add('active');
-                loadData(item.dataJs).then(json => {
-                    render(extractItems(json));
-                    document.getElementById('sidebar').classList.add('hidden');
-                    document.getElementById('toggleFileList').classList.remove('active');
-                    document.getElementById('currentFile').textContent = item.name;
-                    document.getElementById('currentFile').classList.remove('hidden');
-                    saved.lastFile = item.dataJs;
-                    flushSettings();
-                }).catch(() => alert('加载失败：' + item.name));
+                render(extractItems(f.data));
+                document.getElementById('sidebar').classList.add('hidden');
+                document.getElementById('toggleFileList').classList.remove('active');
+                document.getElementById('currentFile').textContent = f.name;
+                document.getElementById('currentFile').classList.remove('hidden');
+                saved.lastFile = f.name;
+                flushSettings();
             });
             listEl.appendChild(chip);
         });
-
-        const chips = listEl.querySelectorAll('.file-chip');
-        const last = saved.lastFile;
-        if (last) {
-            const idx = files.findIndex(f => f.dataJs === last);
-            if (idx >= 0) { chips[idx].click(); return; }
-        }
-        chips[0]?.click();
-    }
-
-    // ---- 文件夹选择（替换默认文件列表）----
-    function createFolderChip(name, file) {
-        const chip = document.createElement('div');
-        chip.className = 'file-chip';
-        chip.textContent = name;
-        chip.addEventListener('click', () => {
-            document.querySelectorAll('.file-chip').forEach(c => c.classList.remove('active'));
-            chip.classList.add('active');
-            const reader = new FileReader();
-            reader.onload = ev => {
-                try {
-                    render(extractItems(JSON.parse(ev.target.result)));
-                    document.getElementById('sidebar').classList.add('hidden');
-                    document.getElementById('toggleFileList').classList.remove('active');
-                    document.getElementById('currentFile').textContent = name;
-                    document.getElementById('currentFile').classList.remove('hidden');
-                    saved.lastFile = name;
-                    flushSettings();
-                } catch { alert('解析失败：' + name); }
-            };
-            reader.readAsText(file, 'UTF-8');
-        });
-        return chip;
-    }
-
-    function replaceWithFolderFiles(folderName, fileEntries) {
-        const listEl = document.getElementById('fileList');
-        listEl.innerHTML = '';
-        saved.useCustomFolder = true;
-        saved.customFolderName = folderName;
-        const restoreBtn = document.createElement('div');
-        restoreBtn.className = 'file-chip';
-        restoreBtn.textContent = '← 返回默认列表';
-        restoreBtn.addEventListener('click', () => {
-            saved.useCustomFolder = false;
-            delete saved.customFolderName;
-            flushSettings();
-            showDefaultFiles();
-        });
-        listEl.appendChild(restoreBtn);
-        const sep = document.createElement('div');
-        sep.className = 'sidebar-separator';
-        sep.textContent = folderName;
-        listEl.appendChild(sep);
-        fileEntries.forEach(({ name, file }) => {
-            const displayName = name.replace(/\.(json|txt)$/i, '');
-            listEl.appendChild(createFolderChip(displayName, file));
-        });
-        flushSettings();
-        // 自动选中上次加载的文件
         const chips = listEl.querySelectorAll('.file-chip');
         const last = saved.lastFile;
         if (last) {
@@ -836,111 +807,167 @@
         chips[0]?.click();
     }
 
-    // ---- IndexedDB 持久化文件夹句柄 ----
-    const DB_NAME = 'folderHandles', STORE_NAME = 'handles', HANDLE_KEY = 'lastFolder';
-
-    function openDB() {
-        return new Promise((resolve, reject) => {
-            const req = indexedDB.open(DB_NAME, 1);
-            req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
-
-    async function saveHandle(handle) {
-        const db = await openDB();
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(handle, HANDLE_KEY);
-        await new Promise(r => { tx.oncomplete = r; });
-    }
-
-    async function loadHandle() {
-        const db = await openDB();
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).get(HANDLE_KEY);
-        return new Promise((resolve, reject) => {
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
-
-    // ---- 通过 showDirectoryPicker（FSAA）扫描文件夹 ----
-    async function scanFSAAHandle(handle) {
-        const entries = [];
-        for await (const entry of handle.values()) {
-            if (entry.kind === 'file' && /\.(json|txt)$/i.test(entry.name)) {
-                entries.push({ name: entry.name, file: await entry.getFile() });
-            }
-        }
-        return entries;
-    }
-
-    // ---- 选择文件夹入口 ----
-    document.getElementById('selectFolder').addEventListener('click', async () => {
-        if (window.showDirectoryPicker) {
-            try {
-                const handle = await window.showDirectoryPicker({ mode: 'read' });
-                await saveHandle(handle);
-                const entries = await scanFSAAHandle(handle);
-                replaceWithFolderFiles(handle.name, entries);
-                return;
-            } catch (err) {
-                if (err.name !== 'AbortError') alert('选择文件夹失败');
-                return;
-            }
-        }
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.webkitdirectory = true;
-        input.addEventListener('change', () => {
-            const list = [...input.files].filter(f => /\.(json|txt)$/i.test(f.name));
-            if (!list.length) return;
-            const folderName = list[0].webkitRelativePath.split('/')[0];
-            replaceWithFolderFiles(folderName, list.map(f => ({ name: f.name, file: f })));
-        });
-        input.click();
+    // 拖拽文件夹
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop', async e => {
+        e.preventDefault();
+        const items = Array.from(e.dataTransfer.items);
+        const entries = items.map(i => i.webkitGetAsEntry()).filter(Boolean);
+        if (!entries.length) return;
+        document.getElementById('fileList').innerHTML = '<div style="padding:20px;text-align:center;color:#999">加载中…</div>';
+        const files = (await Promise.all(entries.map(processEntry))).flat();
+        await setFolderFiles(files);
+        document.getElementById('sidebar').classList.remove('hidden');
+        document.getElementById('toggleFileList').classList.add('active');
     });
 
-    // ---- 页面加载时恢复上次选择的文件夹 ----
-    async function restoreLastFolder() {
-        if (!window.showDirectoryPicker || !saved.useCustomFolder) return false;
+    // webkitdirectory —— file:// 协议可用（无需服务器）
+    const folderInput = document.createElement('input');
+    folderInput.type = 'file';
+    folderInput.webkitdirectory = true;
+    folderInput.style.display = 'none';
+    document.body.appendChild(folderInput);
+    folderInput.addEventListener('change', async () => {
+        const fileList = Array.from(folderInput.files);
+        if (!fileList.length) return;
+        document.getElementById('fileList').innerHTML = '<div style="padding:20px;text-align:center;color:#999">加载中…</div>';
+        const files = [];
+        for (const file of fileList) {
+            if (!/\.(json|txt)$/i.test(file.name)) continue;
+            const text = await readFileAsText(file);
+            try { files.push({ name: file.name, data: JSON.parse(text.trim() || '{}') }); } catch {}
+        }
+        await setFolderFiles(files);
+        folderInput.value = '';
+        document.getElementById('sidebar').classList.remove('hidden');
+        document.getElementById('toggleFileList').classList.add('active');
+    });
+
+    // FSA showDirectoryPicker（优先）；失败时回退 webkitdirectory
+    async function pickDataFolder() {
+        if (FSA_OK) {
+            try {
+                const handle = await window.showDirectoryPicker();
+                await connectDataDirHandle(handle);
+                return;
+            } catch (e) { /* 不支持或用户取消 */ }
+        }
+        folderInput.click();
+    }
+
+    // FSA 目录 handle 连接+持久化
+    async function connectDataDirHandle(handle, storeToIDB = true) {
+        if (storeToIDB) await idbSet('data-dir-handle', handle);
+        const entries = [];
+        for await (const entry of handle.values()) {
+            if (entry.kind === 'file' && /\.(json|txt)$/i.test(entry.name)) entries.push(entry);
+        }
+        const files = [];
+        for (const entry of entries) {
+            const file = await entry.getFile();
+            const text = await file.text();
+            try { files.push({ name: file.name, data: JSON.parse(text.trim() || '{}') }); } catch {}
+        }
+        await setFolderFiles(files);
+        document.getElementById('sidebar').classList.remove('hidden');
+        document.getElementById('toggleFileList').classList.add('active');
+    }
+
+    async function reconnectDataDir(handle) {
         try {
-            const handle = await loadHandle();
-            if (!handle) return false;
-            const opts = { mode: 'read' };
-            if (await handle.queryPermission(opts) !== 'granted') return false;
-            const entries = await scanFSAAHandle(handle);
-            if (!entries.length) return false;
-            replaceWithFolderFiles(handle.name, entries);
-            return true;
-        } catch { return false; }
+            const perm = await handle.queryPermission({ mode: 'read' });
+            if (perm === 'granted') { await connectDataDirHandle(handle, false); return true; }
+            const result = await handle.requestPermission({ mode: 'read' });
+            if (result === 'granted') { await connectDataDirHandle(handle, false); return true; }
+        } catch (e) {}
+        return false;
     }
 
-    // ---- 异步恢复设置文件句柄 ----
-    async function restoreSettingsHandle() {
-        if (!window.showOpenFilePicker) return;
+    // 启动时尝试从 IDB 恢复数据目录
+    async function tryLoadDataDir() {
+        if (!FSA_OK) return;
         try {
-            const h = await loadSettingsHandle();
-            if (!h) return;
-            const perm = await h.queryPermission({ mode: 'readwrite' });
-            if (perm === 'granted') await connectSettingsFile(h, false);
-        } catch { /* 忽略 */ }
+            const h = await idbGet('data-dir-handle');
+            if (h) reconnectDataDir(h);
+        } catch (e) {}
     }
 
-    updateSettingsBar();
+    // 按钮绑定
+    document.getElementById('browseFolderBtn').addEventListener('click', pickDataFolder);
 
-    // 若配置了自定义文件夹且 FSA 可用，直接恢复文件夹列表（不加载默认文件）
-    if (saved.useCustomFolder && window.showDirectoryPicker) {
-        (async () => {
-            const ok = await restoreLastFolder();
-            if (!ok) showDefaultFiles(); // 授权失败则回退默认列表
-        })();
-    } else {
-        showDefaultFiles();
+    // ---- 文件夹路径配置（手动输入，写入 settings.json）----
+    function showFolderDialog() {
+        document.getElementById('folderPathInput').value = saved.folderPath || '';
+        document.getElementById('folderDialog').classList.remove('hidden');
+        document.getElementById('folderPathInput').focus();
+    }
+    document.getElementById('folderPathDisplay').addEventListener('click', showFolderDialog);
+    document.getElementById('reloadFolderBtn').addEventListener('click', showFolderDialog);
+    document.getElementById('folderDialogOk').addEventListener('click', () => {
+        const path = document.getElementById('folderPathInput').value.trim();
+        if (!path) return;
+        saved.folderPath = path;
+        document.getElementById('folderPathDisplay').textContent = '📁 ' + path;
+        document.getElementById('folderPathDisplay').title = path;
+        document.getElementById('folderDialog').classList.add('hidden');
+        flushSettings();
+    });
+    document.getElementById('folderDialogCancel').addEventListener('click', () => {
+        document.getElementById('folderDialog').classList.add('hidden');
+    });
+
+    // ════════════════════════════════════════════════
+    //  初始化
+    // ════════════════════════════════════════════════
+    async function init() {
+        // 文件状态栏（Header 右侧）
+        const header = document.querySelector('.header .tabs');
+        const statusBar = document.createElement('div');
+        statusBar.id = 'file-status';
+        statusBar.style.cssText = 'display:flex;align-items:center;gap:6px;margin-left:auto;font-size:11px;white-space:nowrap';
+        header.after(statusBar);
+
+        // 状态指示灯 + 按钮样式
+        const style = document.createElement('style');
+        style.textContent = `
+            .fb-dot { width:7px;height:7px;border-radius:50%;flex-shrink:0;display:inline-block }
+            .fb-dot.green  { background:#27ae60 }
+            .fb-dot.orange { background:#e67e22 }
+            .fb-dot.red    { background:#e74c3c }
+        `;
+        document.head.appendChild(style);
+
+        updateFileBar();
+
+        // 默认占位
+        document.getElementById('folderPathDisplay').textContent = '📁 未配置';
+        document.getElementById('fileList').innerHTML = '<div style="padding:20px 8px;text-align:center;color:#999;font-size:12px">拖入文件夹，或点击「浏览」选择</div>';
+
+        if (!FSA_OK) return;
+
+        // 从 IDB 恢复 settings.json handle
+        try {
+            const h = await idbGet('settings-handle');
+            if (h) {
+                const perm = await h.queryPermission({ mode: 'readwrite' });
+                if (perm === 'granted') {
+                    await connectSettings(h, false);
+                    return;
+                }
+                // 需要重新授权
+                settingsHandle = h;
+                const bar = document.getElementById('file-status');
+                bar.innerHTML = '';
+                bar.append(
+                    mkEl('span', 'fb-dot orange'),
+                    mkEl('span', '', { textContent: h.name + ' 需重新授权' }),
+                    mkBtn('授权', () => reconnectSettings(h), true)
+                );
+            }
+        } catch (e) { /* IDB 读取失败 */ }
     }
 
-    restoreSettingsHandle();
+    init();
 
     function extractItems(json) {
         // 格式一：旧版 {data:{data:[...]}}
