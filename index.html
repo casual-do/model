@@ -33,7 +33,6 @@
 
         /* ===== 页面基础 ===== */
         body {
-            /*使用楷体*/
             font-family: "JetBrains Mono Medium", "幼圆", Arial, sans-serif;
             font-size: 13px;
             background: #f0f2f5;
@@ -162,25 +161,26 @@
         table {
             width: 100%;
             border-collapse: collapse;
-            background: #fff;
+            background: color-mix(in srgb, var(--page-bg), #fff 82%);
         }
 
         /* 表头：灰色小字，不换行 */
         th {
-            color: #999;
+            color: var(--text-color);
             font-weight: normal;
             font-size: 11px;
             padding: 2px 5px;
-            border-bottom: 1px solid #e8e8e8;
-            background: #fafafa;
+            border-bottom: 1px solid color-mix(in srgb, var(--page-bg), #000 12%);
+            background: color-mix(in srgb, var(--page-bg), #000 5%);
             white-space: nowrap;
+            opacity: 0.6;
         }
 
         /* 表格单元格，不换行防止撑宽 */
         td {
             padding: 2px 5px;
-            border-bottom: 1px solid #f2f2f2;
-            color: #333;
+            border-bottom: 1px solid color-mix(in srgb, var(--page-bg), #000 8%);
+            color: var(--text-color, #333);
             white-space: nowrap;
         }
 
@@ -209,27 +209,28 @@
         }
 
         /* ===== 按部位视图：板件分组交替灰度 ===== */
-        /* 偶数板件组：白色背景 */
+        /* 偶数板件组 */
         .pg0 td {
-            background: #fff;
+            background: color-mix(in srgb, var(--page-bg), #fff 82%);
         }
 
-        /* 奇数板件组：浅灰背景，与 pg0 交替产生分组视觉 */
+        /* 奇数板件组，与 pg0 交替产生分组视觉 */
         .pg1 td {
-            background: #f2f2f2;
+            background: color-mix(in srgb, var(--page-bg), #000 4%);
         }
 
-        /* 数量列：居中蓝色加粗 */
+        /* 数量列：居中加粗 */
         .qty {
             text-align: center;
             font-weight: bold;
-            color: #1677ff;
+            color: var(--accent, #1677ff);
         }
 
         /* 次要信息（如板件号）：浅灰小字 */
         .muted {
-            color: rgb(0 0 0 / 0.56);
+            color: var(--text-color);
             font-size: 11px;
+            opacity: 0.56;
         }
 
         /* 编号列：中等字重 */
@@ -261,13 +262,13 @@
             gap: 16px;
         }
         .cgrid.horizontal {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            align-items: flex-start;
+            column-width: 180px;
+            column-gap: 16px;
+            display: block;
         }
         .cgrid.horizontal > * {
-            flex: 0 0 auto;
+            break-inside: avoid;
+            margin-bottom: 16px;
         }
 
         /* 紧凑卡片，拟态效果 */
@@ -358,6 +359,12 @@
             margin-right: 6px;
         }
 
+        /* 通用视图卡片拖拽 */
+        .ccard.dragging { opacity: 0.4; }
+        .ccard.drag-over { outline: 2px dashed #1677ff; outline-offset: -2px; }
+        .ccard { cursor: grab; }
+        .ccard:active { cursor: grabbing; }
+
         /* 紧凑卡片底部备注行 */
         .compact-notes {
             border-top: 1px solid var(--shadow-dark);
@@ -412,6 +419,8 @@
         /* ===== 布局 ===== */
         .layout {
             display: block;
+            filter: brightness(var(--brightness, 1));
+            transition: filter 0.2s;
         }
 
         /* ===== 文件列表悬浮面板（左侧固定，header 下方起始）===== */
@@ -474,15 +483,16 @@
 <body>
 
 <div class="header">
-    <div id="toggleFileList" class="neu-btn">文件列表</div>
+    <div id="toggleFileList" class="neu-btn">文件</div>
+    <div id="pickFolderBtn" class="neu-btn" title="选择模型数据文件夹">📁</div>
     <div id="currentFile" class="hidden"></div>
     <div class="tabs">
         <div id="statsBar" class="total-badge hidden"></div>
         <div class="tab active" data-view="compact">通用</div>
-        <div class="tab" data-view="part">按部位</div>
-        <div class="tab" data-view="panel">按板件</div>
-        <div id="bgToggle" class="neu-btn" title="切换明暗背景">☀️</div>
-        <div id="layoutToggle" class="neu-btn" title="切换横排/竖排">↕</div>
+        <div class="tab" data-view="part">部位</div>
+        <div class="tab" data-view="panel">板件</div>
+        <div id="bgToggle" class="neu-btn" title="切换明暗背景">白</div>
+        <div id="layoutToggle" class="neu-btn" title="切换横排/竖排">竖</div>
     </div>
 </div>
 
@@ -661,22 +671,24 @@
         bar.append(mkEl('span', 'fb-dot green'), mkEl('span', '', { textContent: settingsHandle.name }));
     }
 
-    const LIGHT_BG = '#f0f2f5', DARK_BG = '#1e1e1e';
+    const LIGHT_BG = '#f5f0eb', DARK_BG = '#000000';
 
     function applyBg(mode) {
         const isLight = mode !== 'dark';
         document.body.style.background = isLight ? LIGHT_BG : DARK_BG;
-        document.getElementById('bgToggle').textContent = isLight ? '🌙' : '☀️';
+        document.getElementById('bgToggle').textContent = isLight ? '白' : '黑';
         saved.bgMode = isLight ? 'light' : 'dark';
-        document.documentElement.style.setProperty('--page-bg', isLight ? LIGHT_BG : DARK_BG);
-        document.documentElement.style.setProperty('--text-color', isLight ? '#333' : '#e0e0e0');
-        document.documentElement.style.setProperty('--accent', isLight ? '#1677ff' : '#66b0ff');
+        const root = document.documentElement;
+        root.style.setProperty('--page-bg', isLight ? LIGHT_BG : DARK_BG);
+        root.style.setProperty('--accent', isLight ? '#1677ff' : '#66b0ff');
+        root.style.setProperty('--text-color', '#333');
+        root.style.setProperty('--brightness', isLight ? '1' : '0.7');
     }
 
     function toggleLayout() {
         const btn = document.getElementById('layoutToggle');
         const isH = btn.classList.toggle('active');
-        btn.textContent = isH ? '↔' : '↕';
+        btn.textContent = isH ? '横' : '竖';
         document.getElementById('viewCompact').classList.toggle('horizontal', isH);
         saved.layoutH = isH ? '1' : '0';
     }
@@ -788,8 +800,6 @@
         document.getElementById('fileList').innerHTML = '<div style="padding:20px;text-align:center;color:#999">加载中…</div>';
         const files = (await Promise.all(entries.map(processEntry))).flat();
         await setFolderFiles(files);
-        document.getElementById('sidebar').classList.remove('hidden');
-        document.getElementById('toggleFileList').classList.add('active');
     });
 
     // webkitdirectory —— file:// 协议可用（无需服务器）
@@ -810,8 +820,6 @@
         }
         await setFolderFiles(files);
         folderInput.value = '';
-        document.getElementById('sidebar').classList.remove('hidden');
-        document.getElementById('toggleFileList').classList.add('active');
     });
 
     // FSA showDirectoryPicker（优先）；失败时回退 webkitdirectory
@@ -824,7 +832,9 @@
                 const handle = await window.showDirectoryPicker(opts);
                 await connectDataDirHandle(handle);
                 return;
-            } catch (e) { /* 不支持或用户取消 */ }
+            } catch (e) {
+                if (e.name === 'AbortError') return; // 用户取消，不做任何事
+            }
         }
         folderInput.click();
     }
@@ -845,8 +855,6 @@
             try { files.push({ name: file.name, data: JSON.parse(text.trim() || '{}') }); } catch {}
         }
         await setFolderFiles(files);
-        document.getElementById('sidebar').classList.remove('hidden');
-        document.getElementById('toggleFileList').classList.add('active');
     }
 
     async function reconnectDataDir(handle) {
@@ -868,7 +876,7 @@
         } catch (e) {}
     }
 
-    document.getElementById('folderPathDisplay').addEventListener('click', pickDataFolder);
+    document.getElementById('pickFolderBtn').addEventListener('click', pickDataFolder);
 
     // ════════════════════════════════════════════════
     //  初始化
@@ -965,12 +973,19 @@
     }
 
     // ---- 按部位：相同板件交替灰度 ----
+    function getPartOrder(parts) {
+        const fileOrder = (saved.lastFile && saved.partOrder ? saved.partOrder[saved.lastFile] : null) || [];
+        const ordered = [...fileOrder.filter(p => parts.includes(p))];
+        const remaining = parts.filter(p => !ordered.includes(p)).sort();
+        return [...ordered, ...remaining];
+    }
+
     function renderByPart(items) {
         const groups = groupBy(items, 'belong_part');
         const el = document.getElementById('viewPart');
         el.innerHTML = '';
 
-        Object.keys(groups).sort().forEach(part => {
+        getPartOrder(Object.keys(groups)).forEach(part => {
             const list = [...groups[part]].sort(sortByPanelComp);
             const total = list.reduce((s, i) => s + Number(i.comp_count), 0);
             const color = getColor(part);
@@ -1055,17 +1070,32 @@
     }
 
     // ---- 紧凑视图：按部位 → 板件行 → 编号芯片（数量>1 右上角角标）----
+    // 通用视图拖拽排序
+    let dragSrcPart = null;
+
+    function savePartOrder() {
+        const el = document.getElementById('viewCompact');
+        const order = Array.from(el.children).map(c => c.dataset.part).filter(Boolean);
+        const key = (saved.lastFile || '');
+        if (!key) return;
+        if (!saved.partOrder) saved.partOrder = {};
+        saved.partOrder[key] = order;
+        flushSettings();
+    }
+
     function renderCompact(items) {
         const groups = groupBy(items, 'belong_part');
         const el = document.getElementById('viewCompact');
         el.innerHTML = '';
 
-        Object.keys(groups).sort().forEach(part => {
+        const parts = Object.keys(groups);
+        const finalOrder = getPartOrder(parts);
+
+        finalOrder.forEach(part => {
             const list = [...groups[part]].sort(sortByPanelComp);
             const total = list.reduce((s, i) => s + Number(i.comp_count), 0);
             const color = getColor(part);
 
-            // 按板件分组，保持排序后的顺序
             const panelOrder = [];
             const panelMap = {};
             list.forEach(i => {
@@ -1089,29 +1119,59 @@
       </div>`;
             }).join('');
 
-            // 收集该部位有备注的条目（去重），按板件编号+备注显示在底部
             const seen = new Set();
             const notesList = [];
             list.forEach(i => {
-                if (i.notes && !seen.has(i.panel_no + '\0' + i.notes)) {
-                    seen.add(i.panel_no + '\0' + i.notes);
-                    notesList.push({ panel: i.panel_no, note: i.notes });
+                if (i.notes && !seen.has(i.panel_no + '\0' + i.comp_no + '\0' + i.notes)) {
+                    seen.add(i.panel_no + '\0' + i.comp_no + '\0' + i.notes);
+                    notesList.push({ panel: i.panel_no, comp: i.comp_no, note: i.notes });
                 }
             });
             const notesHtml = notesList.length
                 ? `<div class="compact-notes">${notesList.map(n =>
-                    `<div class="compact-note"><strong class="note-panel">${n.panel}</strong> ${n.note}</div>`
+                    `<div class="compact-note"><strong class="note-panel">${n.panel}${n.comp}</strong> ${n.note}</div>`
                 ).join('')}</div>`
                 : '';
 
             const card = document.createElement('div');
             card.className = 'ccard';
+            card.dataset.part = part;
             card.innerHTML = `
       <div class="ccard-title" style="background:${blend(color)}">
         <span>${part}</span><span class="badge">共${total}件</span>
       </div>
       <div class="ccard-body">${panelRows}${notesHtml}</div>`;
             el.appendChild(card);
+
+            // 拖拽绑定
+            card.draggable = true;
+            card.addEventListener('dragstart', e => {
+                dragSrcPart = part;
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            card.addEventListener('dragend', () => {
+                card.classList.remove('dragging');
+                document.querySelectorAll('.ccard').forEach(c => c.classList.remove('drag-over'));
+            });
+            card.addEventListener('dragover', e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                card.classList.add('drag-over');
+            });
+            card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+            card.addEventListener('drop', e => {
+                e.preventDefault();
+                card.classList.remove('drag-over');
+                if (dragSrcPart === part) return;
+                const all = Array.from(el.children);
+                const src = all.find(c => c.dataset.part === dragSrcPart);
+                const tgt = all.find(c => c.dataset.part === part);
+                if (!src || !tgt) return;
+                if (src.compareDocumentPosition(tgt) & Node.DOCUMENT_POSITION_FOLLOWING) tgt.after(src);
+                else tgt.before(src);
+                savePartOrder();
+            });
         });
     }
 
