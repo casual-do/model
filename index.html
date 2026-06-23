@@ -476,6 +476,7 @@
 <div class="header">
     <div id="toggleFileList" class="neu-btn">文件列表</div>
     <div id="currentFile" class="hidden"></div>
+    <div id="settingsStatus" class="neu-btn" title="点击选择设置文件">设置</div>
     <div class="tabs">
         <div id="statsBar" class="total-badge hidden"></div>
         <div class="tab active" data-view="compact">通用</div>
@@ -539,6 +540,122 @@
         }
     });
 
+    // ---- 设置存储：先读 localStorage 兜底，再尝试通过 FSA 连接 JSON 文件 ----
+    const LSET_KEY = 'qjb-saved';
+    const saved = (() => { try { return JSON.parse(localStorage.getItem(LSET_KEY)) || {}; } catch { return {}; } })();
+    function fallbackSave() { try { localStorage.setItem(LSET_KEY, JSON.stringify(saved)); } catch {} }
+
+    let settingsHandle = null;
+
+    // 用同一个 IDB 库（folderHandles/handles）多存一个 key
+    const SETTINGS_HANDLE_KEY = 'settingsHandle';
+    async function saveSettingsHandle(handle) {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).put(handle, SETTINGS_HANDLE_KEY);
+        await new Promise(r => { tx.oncomplete = r; });
+    }
+    async function loadSettingsHandle() {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(SETTINGS_HANDLE_KEY);
+        return new Promise((resolve, reject) => {
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    const SETTINGS_FILE_TYPES = [{ description: '设置 JSON 文件', accept: { 'application/json': ['.json'] } }];
+
+    async function flushSettings() {
+        if (settingsHandle) {
+            try {
+                const w = await settingsHandle.createWritable();
+                await w.write(JSON.stringify(saved, null, 2));
+                await w.close();
+                return;
+            } catch { /* fall through to localStorage */ }
+        }
+        fallbackSave();
+    }
+
+    async function connectSettingsFile(handle, storeToIDB = true) {
+        settingsHandle = handle;
+        if (storeToIDB) await saveSettingsHandle(handle);
+        updateSettingsBar();
+        try {
+            const file = await handle.getFile();
+            const text = (await file.text()).trim();
+            if (text) {
+                const data = JSON.parse(text);
+                Object.assign(saved, data);
+            }
+        } catch { /* use existing saved */ }
+        applySavedSettings();
+    }
+
+    function applySavedSettings() {
+        applyBg(saved.bgMode || 'light');
+        if (saved.layoutH === '1' && !document.getElementById('layoutToggle').classList.contains('active')) {
+            toggleLayout();
+        }
+    }
+
+    async function pickSettingsFile() {
+        if (!window.showOpenFilePicker) return;
+        try {
+            const [h] = await window.showOpenFilePicker({ types: SETTINGS_FILE_TYPES, multiple: false });
+            await connectSettingsFile(h);
+        } catch { /* 用户取消 */ }
+    }
+
+    async function createSettingsFile() {
+        if (!window.showSaveFilePicker) return;
+        try {
+            const h = await window.showSaveFilePicker({
+                suggestedName: 'qjb-settings.json',
+                types: SETTINGS_FILE_TYPES
+            });
+            const w = await h.createWritable();
+            await w.write(JSON.stringify(saved, null, 2));
+            await w.close();
+            await connectSettingsFile(h);
+        } catch { /* 用户取消 */ }
+    }
+
+    function updateSettingsBar() {
+        const el = document.getElementById('settingsStatus');
+        if (!window.showOpenFilePicker) {
+            el.textContent = '设置';
+            el.title = '浏览器不支持文件系统 API，设置保存在 localStorage';
+            el.style.opacity = '0.5';
+            return;
+        }
+        if (settingsHandle) {
+            el.textContent = '✓ ' + settingsHandle.name;
+            el.title = '点击更换设置文件';
+            el.style.opacity = '1';
+        } else {
+            el.textContent = '⚙ 设置';
+            el.title = '点击选择设置文件';
+            el.style.opacity = '0.7';
+        }
+    }
+
+    document.getElementById('settingsStatus').addEventListener('click', () => {
+        if (!window.showOpenFilePicker) return;
+        if (settingsHandle) {
+            pickSettingsFile();
+        } else {
+            setTimeout(() => {
+                const action = confirm('点击"确定"选择已有设置文件，点击"取消"新建设置文件');
+                if (action) pickSettingsFile();
+                else createSettingsFile();
+                updateSettingsBar();
+            }, 50);
+        }
+    });
+
     const LIGHT_BG = '#f0f2f5', DARK_BG = '#1e1e1e';
 
     function applyBg(mode) {
@@ -546,15 +663,16 @@
         const hex = isLight ? LIGHT_BG : DARK_BG;
         document.body.style.background = hex;
         document.getElementById('bgToggle').textContent = isLight ? '🌙' : '☀️';
-        localStorage.setItem('bgMode', mode);
+        saved.bgMode = mode;
         document.documentElement.style.setProperty('--page-bg', hex);
         document.documentElement.style.setProperty('--text-color', isLight ? '#333' : '#e0e0e0');
         document.documentElement.style.setProperty('--accent', isLight ? '#1677ff' : '#66b0ff');
+        flushSettings();
     }
 
-    applyBg(localStorage.getItem('bgMode') || 'light');
+    applyBg(saved.bgMode || 'light');
     document.getElementById('bgToggle').addEventListener('click', e => {
-        const next = localStorage.getItem('bgMode') === 'light' ? 'dark' : 'light';
+        const next = (saved.bgMode || 'light') === 'light' ? 'dark' : 'light';
         applyBg(next);
     });
     // 横排/竖排切换（仅通用视图）
@@ -563,10 +681,11 @@
         const isH = btn.classList.toggle('active');
         btn.textContent = isH ? '↔' : '↕';
         document.getElementById('viewCompact').classList.toggle('horizontal', isH);
-        localStorage.setItem('layoutH', isH ? '1' : '0');
+        saved.layoutH = isH ? '1' : '0';
+        flushSettings();
     }
     // 恢复上次的横排/竖排设置
-    if (localStorage.getItem('layoutH') === '1') toggleLayout();
+    if (saved.layoutH === '1') toggleLayout();
     document.getElementById('layoutToggle').addEventListener('click', toggleLayout);
     // Tab 切换
     const VIEWS = ['compact', 'part', 'panel'];
@@ -619,13 +738,13 @@
         });
     }
 
-    function initFileList() {
+    function showDefaultFiles() {
         const files = window.__MODEL_FILES__;
         const listEl = document.getElementById('fileList');
         listEl.innerHTML = '';
 
         if (!files || files.length === 0) {
-            listEl.innerHTML = '<span style="color:#bbb;font-size:12px">modeljson/ 目录下暂无文件，请运行 update-index.ps1 生成索引</span>';
+            listEl.innerHTML = '<span style="color:#bbb;font-size:12px">modeljson/ 目录下暂无文件</span>';
             return;
         }
 
@@ -642,14 +761,15 @@
                     document.getElementById('toggleFileList').classList.remove('active');
                     document.getElementById('currentFile').textContent = item.name;
                     document.getElementById('currentFile').classList.remove('hidden');
-                    localStorage.setItem('lastFile', item.dataJs);
+                    saved.lastFile = item.dataJs;
+                    flushSettings();
                 }).catch(() => alert('加载失败：' + item.name));
             });
             listEl.appendChild(chip);
         });
 
         const chips = listEl.querySelectorAll('.file-chip');
-        const last = localStorage.getItem('lastFile');
+        const last = saved.lastFile;
         if (last) {
             const idx = files.findIndex(f => f.dataJs === last);
             if (idx >= 0) { chips[idx].click(); return; }
@@ -657,7 +777,7 @@
         chips[0]?.click();
     }
 
-    // ---- 文件夹选择（支持持久化）----
+    // ---- 文件夹选择（替换默认文件列表）----
     function createFolderChip(name, file) {
         const chip = document.createElement('div');
         chip.className = 'file-chip';
@@ -673,6 +793,8 @@
                     document.getElementById('toggleFileList').classList.remove('active');
                     document.getElementById('currentFile').textContent = name;
                     document.getElementById('currentFile').classList.remove('hidden');
+                    saved.lastFile = name;
+                    flushSettings();
                 } catch { alert('解析失败：' + name); }
             };
             reader.readAsText(file, 'UTF-8');
@@ -680,8 +802,21 @@
         return chip;
     }
 
-    function appendFolderFiles(folderName, fileEntries) {
+    function replaceWithFolderFiles(folderName, fileEntries) {
         const listEl = document.getElementById('fileList');
+        listEl.innerHTML = '';
+        saved.useCustomFolder = true;
+        saved.customFolderName = folderName;
+        const restoreBtn = document.createElement('div');
+        restoreBtn.className = 'file-chip';
+        restoreBtn.textContent = '← 返回默认列表';
+        restoreBtn.addEventListener('click', () => {
+            saved.useCustomFolder = false;
+            delete saved.customFolderName;
+            flushSettings();
+            showDefaultFiles();
+        });
+        listEl.appendChild(restoreBtn);
         const sep = document.createElement('div');
         sep.className = 'sidebar-separator';
         sep.textContent = folderName;
@@ -690,6 +825,15 @@
             const displayName = name.replace(/\.(json|txt)$/i, '');
             listEl.appendChild(createFolderChip(displayName, file));
         });
+        flushSettings();
+        // 自动选中上次加载的文件
+        const chips = listEl.querySelectorAll('.file-chip');
+        const last = saved.lastFile;
+        if (last) {
+            const found = Array.from(chips).find(c => c.textContent === last);
+            if (found) { found.click(); return; }
+        }
+        chips[0]?.click();
     }
 
     // ---- IndexedDB 持久化文件夹句柄 ----
@@ -734,20 +878,18 @@
 
     // ---- 选择文件夹入口 ----
     document.getElementById('selectFolder').addEventListener('click', async () => {
-        // 优先使用 File System Access API（支持持久化）
         if (window.showDirectoryPicker) {
             try {
                 const handle = await window.showDirectoryPicker({ mode: 'read' });
                 await saveHandle(handle);
                 const entries = await scanFSAAHandle(handle);
-                appendFolderFiles(handle.name, entries);
+                replaceWithFolderFiles(handle.name, entries);
                 return;
             } catch (err) {
                 if (err.name !== 'AbortError') alert('选择文件夹失败');
                 return;
             }
         }
-        // 降级：webkitdirectory（无法持久化）
         const input = document.createElement('input');
         input.type = 'file';
         input.webkitdirectory = true;
@@ -755,26 +897,50 @@
             const list = [...input.files].filter(f => /\.(json|txt)$/i.test(f.name));
             if (!list.length) return;
             const folderName = list[0].webkitRelativePath.split('/')[0];
-            appendFolderFiles(folderName, list.map(f => ({ name: f.name, file: f })));
+            replaceWithFolderFiles(folderName, list.map(f => ({ name: f.name, file: f })));
         });
         input.click();
     });
 
     // ---- 页面加载时恢复上次选择的文件夹 ----
     async function restoreLastFolder() {
-        if (!window.showDirectoryPicker) return;
+        if (!window.showDirectoryPicker || !saved.useCustomFolder) return false;
         try {
             const handle = await loadHandle();
-            if (!handle) return;
+            if (!handle) return false;
             const opts = { mode: 'read' };
-            if (await handle.queryPermission(opts) !== 'granted') return;
+            if (await handle.queryPermission(opts) !== 'granted') return false;
             const entries = await scanFSAAHandle(handle);
-            if (entries.length) appendFolderFiles(handle.name, entries);
+            if (!entries.length) return false;
+            replaceWithFolderFiles(handle.name, entries);
+            return true;
+        } catch { return false; }
+    }
+
+    // ---- 异步恢复设置文件句柄 ----
+    async function restoreSettingsHandle() {
+        if (!window.showOpenFilePicker) return;
+        try {
+            const h = await loadSettingsHandle();
+            if (!h) return;
+            const perm = await h.queryPermission({ mode: 'readwrite' });
+            if (perm === 'granted') await connectSettingsFile(h, false);
         } catch { /* 忽略 */ }
     }
 
-    initFileList();
-    restoreLastFolder();
+    updateSettingsBar();
+
+    // 若配置了自定义文件夹且 FSA 可用，直接恢复文件夹列表（不加载默认文件）
+    if (saved.useCustomFolder && window.showDirectoryPicker) {
+        (async () => {
+            const ok = await restoreLastFolder();
+            if (!ok) showDefaultFiles(); // 授权失败则回退默认列表
+        })();
+    } else {
+        showDefaultFiles();
+    }
+
+    restoreSettingsHandle();
 
     function extractItems(json) {
         // 格式一：旧版 {data:{data:[...]}}
