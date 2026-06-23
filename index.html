@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>取件表</title>
+    <style>
+        /* ===== 全局重置 ===== */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* ===== CSS 变量 ===== */
+        :root {
+            /* ========== 1. 只需要改这个背景色 ========== */
+            --page-bg: #f0f2f5;
+
+            /* ========== 2. 下面全部自动计算，不用动 ========== */
+            /* 阴影：背景色加深 13% */
+            --shadow-dark: color-mix(in srgb, var(--page-bg), #000 15%);
+            /* 高光：背景色提亮 10% */
+            --shadow-light: color-mix(in srgb, var(--page-bg), #fff 20%);
+
+            /* 最终自动生成的完美拟态阴影 8 8 16*/
+            /* 最终自动生成的完美拟态阴影 6 6 12*/
+            --neu-shadow: 6px 6px 12px var(--shadow-dark),
+            -6px -6px 12px var(--shadow-light);
+
+            --neu-inset-shadow: inset 1.5px 1.5px 3px var(--shadow-dark),
+            inset -1.5px -1.5px 3px var(--shadow-light);
+        }
+
+        /* ===== 页面基础 ===== */
+        body {
+            /*使用楷体*/
+            font-family: "JetBrains Mono Medium", "幼圆", Arial, sans-serif;
+            font-size: 13px;
+            background: #f0f2f5;
+            color: var(--text-color, #333);
+            padding: 10px;
+        }
+
+        /* ===== 顶部栏 ===== */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        /* 拟态按钮通用样式 */
+        .neu-btn {
+            padding: 3px 11px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            background: var(--page-bg);
+            color: var(--text-color, #555);
+            white-space: nowrap;
+            box-shadow: var(--neu-shadow);
+            cursor: pointer;
+            transition: box-shadow 0.15s;
+        }
+        .neu-btn:hover {
+            box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+        }
+        .neu-btn.active {
+            box-shadow: none;
+            background: var(--page-bg);
+            color: var(--accent, #1677ff);
+            font-weight: bold;
+        }
+
+        /* 当前文件名，样式同按钮 */
+        #currentFile {
+            padding: 3px 11px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            background: var(--page-bg);
+            color: var(--text-color, #888);
+            opacity: 0.7;
+            white-space: nowrap;
+            box-shadow: var(--neu-shadow);
+            margin-left: 6px;
+        }
+
+        /* 文件列表按钮使用 neu-btn 类 */
+
+        /* Tab 栏容器，靠右对齐 */
+        .tabs {
+            display: flex;
+            gap: 12px;
+            margin-left: auto;
+            align-items: center;
+        }
+
+        /* 单个 Tab 默认样式 */
+        .tab {
+            padding: 3px 11px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            background: var(--page-bg);
+            color: var(--text-color, #555);
+            box-shadow: var(--neu-shadow);
+            transition: box-shadow 0.15s;
+        }
+        .tab:hover {
+            box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+        }
+
+        /* 当前激活的 Tab */
+        .tab.active {
+            box-shadow: none;
+            background: var(--page-bg);
+            color: var(--accent, #1677ff);
+            font-weight: bold;
+        }
+
+        /* ===== 普通视图（按部位 / 按板件）网格 ===== */
+        /* 弹性换行，卡片宽度由内容决定 */
+        .grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: flex-start;
+        }
+        .grid > * {
+            flex: 0 0 auto;
+        }
+
+        /* 普通卡片容器，拟态效果 */
+        .card {
+            background: var(--page-bg, #f0f2f5);
+            border: none;
+            border-radius: 7px;
+            overflow: hidden;
+            box-shadow: var(--neu-shadow);
+        }
+
+        /* 卡片彩色标题栏 */
+        .card-title {
+            color: #fff;
+            padding: 3px 8px;
+            font-weight: bold;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* 标题栏右侧"共N件"小字 */
+        .badge {
+            font-size: 11px;
+            opacity: 0.82;
+        }
+
+        /* ===== 卡片内部表格 ===== */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+        }
+
+        /* 表头：灰色小字，不换行 */
+        th {
+            color: #999;
+            font-weight: normal;
+            font-size: 11px;
+            padding: 2px 5px;
+            border-bottom: 1px solid #e8e8e8;
+            background: #fafafa;
+            white-space: nowrap;
+        }
+
+        /* 表格单元格，不换行防止撑宽 */
+        td {
+            padding: 2px 5px;
+            border-bottom: 1px solid #f2f2f2;
+            color: #333;
+            white-space: nowrap;
+        }
+
+        /* 最后一行去掉底边框 */
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* ===== 按板件视图：部位标签列 ===== */
+        /* 部位标签容器，flex 换行 */
+        .parts-cell {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            padding: 2px 4px;
+        }
+
+        /* 单个部位标签，背景色由 JS 按部位颜色设置 */
+        .part-tag {
+            display: inline-block;
+            white-space: nowrap;
+            font-size: 11px;
+            padding: 0 5px;
+            border-radius: 3px;
+            line-height: 18px;
+        }
+
+        /* ===== 按部位视图：板件分组交替灰度 ===== */
+        /* 偶数板件组：白色背景 */
+        .pg0 td {
+            background: #fff;
+        }
+
+        /* 奇数板件组：浅灰背景，与 pg0 交替产生分组视觉 */
+        .pg1 td {
+            background: #f2f2f2;
+        }
+
+        /* 数量列：居中蓝色加粗 */
+        .qty {
+            text-align: center;
+            font-weight: bold;
+            color: #1677ff;
+        }
+
+        /* 次要信息（如板件号）：浅灰小字 */
+        .muted {
+            color: rgb(0 0 0 / 0.56);
+            font-size: 11px;
+        }
+
+        /* 编号列：中等字重 */
+        .comp-label {
+            font-weight: 500;
+        }
+
+        /* 备注小字（按部位/按板件表格内） */
+        .note-text {
+            font-size: 10px;
+            color: #f59e0b;
+            font-weight: normal;
+            white-space: normal;
+            line-height: 1.3;
+            margin-top: 1px;
+        }
+
+        /* 有 tooltip 的 chip 加虚线下划线提示可悬停 */
+        .chip[title] {
+            text-decoration: underline dotted currentColor;
+            text-underline-offset: 2px;
+        }
+
+        /* ===== 通用（紧凑）视图 ===== */
+        /* 紧凑网格，最小列宽 140px；.horizontal 横排滚动 */
+        .cgrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 16px;
+        }
+        .cgrid.horizontal {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: flex-start;
+        }
+        .cgrid.horizontal > * {
+            flex: 0 0 auto;
+        }
+
+        /* 紧凑卡片，拟态效果 */
+        .ccard {
+            background: var(--page-bg, #f0f2f5);
+            border: none;
+            border-radius: 7px;
+            overflow: hidden;
+            box-shadow: var(--neu-shadow);
+        }
+
+        /* 紧凑卡片标题栏 */
+        .ccard-title {
+            color: #fff;
+            padding: 2px 7px;
+            font-weight: bold;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* 紧凑卡片内容区，竖向排列各板件行 */
+        .ccard-body {
+            padding: 4px 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        /* 单个板件行：板件标签 + 编号芯片横排 */
+        .panel-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 4px;
+        }
+
+        /* 板件编号标签（如"A""B1"），背景色由 JS 按板件颜色设置 */
+        .panel-lbl {
+            font-size: 10px;
+            color: #fff;
+            border-radius: 3px;
+            padding: 1px 5px;
+            line-height: 16px;
+            white-space: nowrap;
+            flex-shrink: 0; /* 防止被挤压 */
+            margin-top: 1px;
+        }
+
+        /* 编号芯片容器，允许换行 */
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+        }
+
+        /* 单个编号芯片，背景/文字颜色由 JS 按部位颜色设置 */
+        .chip {
+            position: relative;
+            display: inline-block;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 0 5px;
+            border-radius: 3px;
+            line-height: 1.5;
+            white-space: nowrap;
+        }
+
+        /* 数量角标（仅数量>1时渲染），红底白字圆形 */
+        .chip sup {
+            font-size: 8px;
+            font-weight: lighter;
+            color: #ececec;
+            position: absolute;
+            top: -3px;
+            right: -5px;
+            background: rgb(0 0 0 / 0.56);
+            border-radius: 3px; /* 圆形；改为 0 = 方形，3px = 圆角方形 */
+            width: 10px;
+            height: 10px;
+            line-height: 10px;
+            text-align: center;
+            padding: 0;
+        }
+
+        /* 有角标的芯片右侧留出空间，避免角标被遮挡 */
+        .chip.has-sup {
+            margin-right: 6px;
+        }
+
+        /* 紧凑卡片底部备注行 */
+        .compact-notes {
+            border-top: 1px solid var(--shadow-dark);
+            padding: 3px 0;
+            margin-top: 2px;
+        }
+        .compact-note {
+            font-size: 10px;
+            color: #f59e0b;
+            line-height: 1.4;
+            padding: 1px 0;
+        }
+        .compact-note .note-panel {
+            font-weight: 600;
+            margin-right: 4px;
+        }
+
+        /* ===== 通用工具类 ===== */
+        /* 空数据提示文字 */
+        .placeholder {
+            color: var(--text-color, #bbb);
+            opacity: 0.5;
+            padding: 30px;
+            text-align: center;
+        }
+
+        /* 隐藏元素 */
+        /* 隐藏元素（important 确保覆盖所有 display 设置）*/
+        .hidden {
+            display: none !important;
+        }
+
+        /* ===== 总数统计标签（Tab 栏内右侧）===== */
+        .total-badge {
+            background: var(--page-bg);
+            border: none;
+            color: var(--text-color, #555);
+            border-radius: 6px;
+            padding: 3px 11px;
+            font-size: 12px;
+            white-space: nowrap;
+            box-shadow: var(--neu-shadow);
+            transition: box-shadow 0.15s;
+        }
+
+        /* 总数标签内的数字，蓝色加粗 */
+        .total-badge .tb-num {
+            font-weight: bold;
+            color: #1677ff;
+        }
+
+        /* ===== 布局 ===== */
+        .layout {
+            display: block;
+        }
+
+        /* ===== 文件列表悬浮面板（左侧固定，header 下方起始）===== */
+        .sidebar {
+            position: fixed;
+            top: 44px;
+            left: 0;
+            height: calc(100vh - 44px);
+            width: 140px;
+            background: var(--page-bg);
+            border-right: 1px solid var(--shadow-dark);
+            border-radius: 0 8px 8px 0;
+            z-index: 1000;
+            padding: 10px 8px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        /* 单个文件芯片 */
+        .file-chip {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            color: var(--text-color, #555);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .file-chip:hover {
+            background: color-mix(in srgb, var(--page-bg), #000 8%);
+        }
+
+        /* 当前加载的文件芯片高亮 */
+        .file-chip.active {
+            box-shadow: none;
+            background: var(--page-bg);
+            color: var(--accent, #1677ff);
+            font-weight: bold;
+        }
+
+
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div id="toggleFileList" class="neu-btn">文件列表</div>
+    <div id="currentFile" class="hidden"></div>
+    <div class="tabs">
+        <div id="statsBar" class="total-badge hidden"></div>
+        <div class="tab active" data-view="compact">通用</div>
+        <div class="tab" data-view="part">按部位</div>
+        <div class="tab" data-view="panel">按板件</div>
+        <div id="bgToggle" class="neu-btn" title="切换明暗背景">☀️</div>
+        <div id="layoutToggle" class="neu-btn" title="切换横排/竖排">↕</div>
+    </div>
+</div>
+
+<div class="layout">
+    <div class="main">
+        <div id="viewCompact" class="cgrid"></div>
+        <div id="viewPart" class="grid hidden"></div>
+        <div id="viewPanel" class="grid hidden"></div>
+    </div>
+    <div id="sidebar" class="sidebar hidden">
+        <div id="fileList"></div>
+    </div>
+</div>
+
+<script src="modeljson/__files__.js"></script>
+<script>
+    const COLOR_POOL = [
+        '#e6194b', '#f58231', '#e68a00', '#cca300',
+        '#3cb44b', '#2ca02c', '#469990', '#17becf',
+        '#4363d8', '#1565C0', '#911eb4', '#7b1fa2',
+        '#c74b9b', '#f032e6', '#ee4422', '#00acc1',
+    ];
+    const colorMap = {};
+
+    function getColor(key) {
+        if (!colorMap[key]) {
+            let hash = 0;
+            for (let i = 0; i < key.length; i++) {
+                hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+            }
+            colorMap[key] = COLOR_POOL[hash % COLOR_POOL.length];
+        }
+        return colorMap[key];
+    }
+
+    // 文件列表开关（悬浮面板）
+    document.getElementById('toggleFileList').addEventListener('click', () => {
+        const sidebar = document.getElementById('sidebar');
+        const btn = document.getElementById('toggleFileList');
+        const hidden = sidebar.classList.toggle('hidden');
+        btn.classList.toggle('active', !hidden);
+    });
+
+    // 点击页面其他区域时隐藏文件列表
+    document.addEventListener('click', e => {
+        const sidebar = document.getElementById('sidebar');
+        const btn = document.getElementById('toggleFileList');
+        if (!sidebar.classList.contains('hidden') &&
+            !sidebar.contains(e.target) &&
+            !btn.contains(e.target)) {
+            sidebar.classList.add('hidden');
+            btn.classList.remove('active');
+        }
+    });
+
+    const LIGHT_BG = '#f0f2f5', DARK_BG = '#1e1e1e';
+
+    function applyBg(mode) {
+        const isLight = mode === 'light';
+        const hex = isLight ? LIGHT_BG : DARK_BG;
+        document.body.style.background = hex;
+        document.getElementById('bgToggle').textContent = isLight ? '🌙' : '☀️';
+        localStorage.setItem('bgMode', mode);
+        document.documentElement.style.setProperty('--page-bg', hex);
+        document.documentElement.style.setProperty('--text-color', isLight ? '#333' : '#e0e0e0');
+        document.documentElement.style.setProperty('--accent', isLight ? '#1677ff' : '#66b0ff');
+    }
+
+    applyBg(localStorage.getItem('bgMode') || 'light');
+    document.getElementById('bgToggle').addEventListener('click', e => {
+        const next = localStorage.getItem('bgMode') === 'light' ? 'dark' : 'light';
+        applyBg(next);
+    });
+    // 横排/竖排切换（仅通用视图）
+    function toggleLayout() {
+        const btn = document.getElementById('layoutToggle');
+        const isH = btn.classList.toggle('active');
+        btn.textContent = isH ? '↔' : '↕';
+        document.getElementById('viewCompact').classList.toggle('horizontal', isH);
+        localStorage.setItem('layoutH', isH ? '1' : '0');
+    }
+    // 恢复上次的横排/竖排设置
+    if (localStorage.getItem('layoutH') === '1') toggleLayout();
+    document.getElementById('layoutToggle').addEventListener('click', toggleLayout);
+    // Tab 切换
+    const VIEWS = ['compact', 'part', 'panel'];
+    document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
+            const v = tab.dataset.view;
+            VIEWS.forEach(id => document.getElementById('view' + id[0].toUpperCase() + id.slice(1)).classList.toggle('hidden', v !== id));
+        });
+    });
+
+    // 字号滑动条
+    const root = document.documentElement;
+    document.getElementById('sizeSlider')?.addEventListener('input', e => {
+        document.getElementById('sizeVal').textContent = e.target.value;
+    });
+
+    // 手动选择文件（备用）
+    //document.getElementById('fileInput').addEventListener('change', e => {
+    //    const file = e.target.files[0];
+    //    if (!file) return;
+    //    const reader = new FileReader();
+    //    reader.onload = ev => {
+    //        try {
+    //            render(extractItems(JSON.parse(/** @type {string} */(ev.target.result))));
+    //        } catch {
+    //            alert('JSON 解析失败');
+    //        }
+    //    };
+    //    reader.readAsText(file, 'utf-8');
+    //});
+
+    // 通过 <script> 标签动态加载数据（兼容 file:// 协议）
+    function loadData(jsFile) {
+        return new Promise((resolve, reject) => {
+            window.__MODEL_DATA__ = null;
+            const script = document.createElement('script');
+            script.src = 'modeljson/__data__/' + jsFile;
+            script.charset = 'UTF-8';
+            script.onload = () => {
+                if (window.__MODEL_DATA__) {
+                    resolve(window.__MODEL_DATA__);
+                    window.__MODEL_DATA__ = null;
+                } else {
+                    reject(new Error('No data loaded'));
+                }
+            };
+            script.onerror = () => reject(new Error('Failed to load ' + jsFile));
+            document.head.appendChild(script);
+        });
+    }
+
+    function initFileList() {
+        const files = window.__MODEL_FILES__;
+        const listEl = document.getElementById('fileList');
+        listEl.innerHTML = '';
+
+        if (!files || files.length === 0) {
+            listEl.innerHTML = '<span style="color:#bbb;font-size:12px">modeljson/ 目录下暂无文件，请运行 update-index.ps1 生成索引</span>';
+            return;
+        }
+
+        files.forEach(item => {
+            const chip = document.createElement('div');
+            chip.className = 'file-chip';
+            chip.textContent = item.name;
+            chip.addEventListener('click', () => {
+                document.querySelectorAll('.file-chip').forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+                loadData(item.dataJs).then(json => {
+                    render(extractItems(json));
+                    document.getElementById('sidebar').classList.add('hidden');
+                    document.getElementById('toggleFileList').classList.remove('active');
+                    document.getElementById('currentFile').textContent = item.name;
+                    document.getElementById('currentFile').classList.remove('hidden');
+                    localStorage.setItem('lastFile', item.dataJs);
+                }).catch(() => alert('加载失败：' + item.name));
+            });
+            listEl.appendChild(chip);
+        });
+
+        const chips = listEl.querySelectorAll('.file-chip');
+        const last = localStorage.getItem('lastFile');
+        if (last) {
+            const idx = files.findIndex(f => f.dataJs === last);
+            if (idx >= 0) { chips[idx].click(); return; }
+        }
+        chips[0]?.click();
+    }
+
+    initFileList();
+
+    function extractItems(json) {
+        // 格式一：旧版 {data:{data:[...]}}
+        if (Array.isArray(json.data?.data)) return json.data.data;
+        // 格式二：新版 {data:{sections:[{name, parts:[{runnerName,partName,quantity}]}]}}
+        if (Array.isArray(json.data?.sections)) {
+            return json.data.sections.flatMap(section =>
+                section.parts.map(p => ({
+                    belong_part: section.name,
+                    panel_no: p.runnerName,
+                    comp_no: p.partName,
+                    comp_count: p.quantity,
+                    notes: p.notes || '',
+                }))
+            );
+        }
+        // 格式三：直接数组
+        if (Array.isArray(json.data)) return json.data;
+        if (Array.isArray(json)) return json;
+        return [];
+    }
+
+    // 将颜色与背景混合，使其随背景色自动适配
+    function blend(color, pct = 15) {
+        return `color-mix(in srgb, ${color}, var(--page-bg) ${pct}%)`;
+    }
+
+    function render(items) {
+        renderStatsBar(items);
+        renderByPart(items);
+        renderByPanel(items);
+        renderCompact(items);
+    }
+
+    // ---- 板件统计栏 ----
+    function renderStatsBar(items) {
+        const total = items.reduce((s, i) => s + Number(i.comp_count), 0);
+        const bar = document.getElementById('statsBar');
+        bar.innerHTML = `共 <span class="tb-num">${total}</span> 件`;
+        bar.classList.remove('hidden');
+    }
+
+    // ---- 按部位：相同板件交替灰度 ----
+    function renderByPart(items) {
+        const groups = groupBy(items, 'belong_part');
+        const el = document.getElementById('viewPart');
+        el.innerHTML = '';
+
+        Object.keys(groups).sort().forEach(part => {
+            const list = [...groups[part]].sort(sortByPanelComp);
+            const total = list.reduce((s, i) => s + Number(i.comp_count), 0);
+            const color = getColor(part);
+
+            let pgIdx = -1, lastPanel = null;
+            const rows = list.map(i => {
+                if (i.panel_no !== lastPanel) {
+                    pgIdx++;
+                    lastPanel = i.panel_no;
+                }
+                const shade = pgIdx % 2 === 0 ? 'pg0' : 'pg1';
+                return `<tr class="${shade}">
+        <td class="muted">${i.panel_no}</td>
+        <td class="comp-label">${i.comp_no}${i.notes ? `<div class="note-text">${i.notes}</div>` : ''}</td>
+        <td class="qty">${i.comp_count}</td>
+      </tr>`;
+            }).join('');
+
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+      <div class="card-title" style="background:${blend(color)}">
+        <span>${part}</span><span class="badge">共${total}件</span>
+      </div>
+      <table>
+        <thead><tr><th>板件</th><th>编号</th><th>数量</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+            el.appendChild(card);
+        });
+    }
+
+    // ---- 按板件：相同编号聚合，部位标签 ----
+    function renderByPanel(items) {
+        const groups = groupBy(items, 'panel_no');
+        const el = document.getElementById('viewPanel');
+        el.innerHTML = '';
+
+        Object.keys(groups)
+            .sort((a, b) => a.localeCompare(b, undefined, {numeric: true}))
+            .forEach(panel => {
+                const compMap = {};
+                groups[panel].forEach(i => {
+                    const key = String(i.comp_no);
+                    if (!compMap[key]) compMap[key] = {parts: [], count: 0, notes: []};
+                    compMap[key].parts.push(i.belong_part);
+                    compMap[key].count += Number(i.comp_count);
+                    if (i.notes) compMap[key].notes.push(i.notes);
+                });
+
+                const merged = Object.entries(compMap)
+                    .sort(([a], [b]) => a.localeCompare(b, undefined, {numeric: true}))
+                    .map(([no, v]) => ({
+                        comp_no: no,
+                        parts: v.parts,
+                        count: v.count,
+                        notes: [...new Set(v.notes)].join(' / ')
+                    }));
+
+                const total = merged.reduce((s, r) => s + r.count, 0);
+                const color = getColor('panel_' + panel);
+
+                const rows = merged.map(r => `
+        <tr>
+          <td class="comp-label">${r.comp_no}${r.notes ? `<div class="note-text">${r.notes}</div>` : ''}</td>
+          <td class="parts-cell">${r.parts.map(p => `<span class="part-tag" style="background:${blend(getColor(p))};color:#fff">${p}</span>`).join('')}</td>
+          <td class="qty">${r.count}</td>
+        </tr>`).join('');
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+        <div class="card-title" style="background:${blend(color)}">
+          <span>板件 ${panel}</span><span class="badge">共${total}件</span>
+        </div>
+        <table>
+          <thead><tr><th>编号</th><th>部位</th><th>数量</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+                el.appendChild(card);
+            });
+    }
+
+    // ---- 紧凑视图：按部位 → 板件行 → 编号芯片（数量>1 右上角角标）----
+    function renderCompact(items) {
+        const groups = groupBy(items, 'belong_part');
+        const el = document.getElementById('viewCompact');
+        el.innerHTML = '';
+
+        Object.keys(groups).sort().forEach(part => {
+            const list = [...groups[part]].sort(sortByPanelComp);
+            const total = list.reduce((s, i) => s + Number(i.comp_count), 0);
+            const color = getColor(part);
+
+            // 按板件分组，保持排序后的顺序
+            const panelOrder = [];
+            const panelMap = {};
+            list.forEach(i => {
+                if (!panelMap[i.panel_no]) {
+                    panelMap[i.panel_no] = [];
+                    panelOrder.push(i.panel_no);
+                }
+                panelMap[i.panel_no].push(i);
+            });
+
+            const panelRows = panelOrder.map((pno, idx) => {
+                const chips = panelMap[pno].map(i => {
+                    const qty = Number(i.comp_count);
+                    const hasSup = qty > 1;
+                    return `<span class="chip${hasSup ? ' has-sup' : ''}" style="background:${color}10;color:${color}"${i.notes ? ` title="${i.notes}"` : ''}>${i.comp_no}${hasSup ? `<sup>${qty}</sup>` : ''}</span>`;
+                }).join('');
+                const divider = idx > 0 ? `<div style="border-top:1px solid ${color}50;margin:1px 0"></div>` : '';
+                return `${divider}<div class="panel-row">
+        <span class="panel-lbl" style="background:${blend(getColor('panel_' + pno))}">${pno}</span>
+        <div class="chips">${chips}</div>
+      </div>`;
+            }).join('');
+
+            // 收集该部位有备注的条目（去重），按板件编号+备注显示在底部
+            const seen = new Set();
+            const notesList = [];
+            list.forEach(i => {
+                if (i.notes && !seen.has(i.panel_no + '\0' + i.notes)) {
+                    seen.add(i.panel_no + '\0' + i.notes);
+                    notesList.push({ panel: i.panel_no, note: i.notes });
+                }
+            });
+            const notesHtml = notesList.length
+                ? `<div class="compact-notes">${notesList.map(n =>
+                    `<div class="compact-note"><strong class="note-panel">${n.panel}</strong> ${n.note}</div>`
+                ).join('')}</div>`
+                : '';
+
+            const card = document.createElement('div');
+            card.className = 'ccard';
+            card.innerHTML = `
+      <div class="ccard-title" style="background:${blend(color)}">
+        <span>${part}</span><span class="badge">共${total}件</span>
+      </div>
+      <div class="ccard-body">${panelRows}${notesHtml}</div>`;
+            el.appendChild(card);
+        });
+    }
+
+    function groupBy(arr, key) {
+        return arr.reduce((acc, item) => {
+            const k = item[key] ?? '未知';
+            (acc[k] ??= []).push(item);
+            return acc;
+        }, {});
+    }
+
+    function sortByPanelComp(a, b) {
+        return a.panel_no.localeCompare(b.panel_no, undefined, {numeric: true}) ||
+            String(a.comp_no).localeCompare(String(b.comp_no), undefined, {numeric: true});
+    }
+</script>
+</body>
+</html>
