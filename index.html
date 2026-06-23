@@ -494,39 +494,13 @@
     </div>
     <div id="sidebar" class="sidebar hidden">
         <div id="folderRow" style="display:flex;gap:4px;margin-bottom:8px;width:100%">
-            <div id="folderPathDisplay" class="neu-btn" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left" title="点击修改文件夹路径">📁 未配置</div>
-            <button id="reloadFolderBtn" class="neu-btn" title="刷新文件列表">↻</button>
+            <div id="folderPathDisplay" class="neu-btn" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left" title="选择数据文件夹">📁 选择文件夹</div>
         </div>
         <div id="fileList"></div>
     </div>
 </div>
 
-<div id="folderDialog" class="folder-dialog hidden">
-    <div class="folder-dialog-content">
-        <div style="font-weight:bold;margin-bottom:8px">模型文件夹路径</div>
-        <div style="display:flex;gap:4px;margin-bottom:8px">
-            <input id="folderPathInput" type="text" style="flex:1;padding:5px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:inherit" placeholder="D:\models\gundam">
-            <button id="browseFolderBtn" class="neu-btn">浏览</button>
-        </div>
-        <div style="display:flex;gap:4px;justify-content:flex-end">
-            <button id="folderDialogCancel" class="neu-btn">取消</button>
-            <button id="folderDialogOk" class="neu-btn" style="background:var(--accent,#1677ff);color:#fff">确定</button>
-        </div>
-    </div>
-</div>
 
-<style>
-.folder-dialog {
-    position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.3);
-    display:flex;align-items:center;justify-content:center;
-}
-.folder-dialog.hidden { display:none !important; }
-.folder-dialog-content {
-    background:var(--page-bg,#f0f2f5);padding:16px;border-radius:8px;
-    box-shadow:0 4px 24px rgba(0,0,0,0.2);min-width:360px;max-width:90vw;
-    color:var(--text-color,#333);
-}
-</style>
 <script>
     const COLOR_POOL = [
         '#e6194b', '#f58231', '#e68a00', '#cca300',
@@ -573,7 +547,7 @@
     const FILE_TYPES = [{ description: '设置文件', accept: { 'application/json': ['.json'] } }];
 
     let settingsHandle = null;
-    let saved = { folderPath: '', bgMode: 'light', layoutH: '0', lastFile: '' };
+    let saved = { bgMode: 'light', layoutH: '0', lastFile: '' };
 
     // IndexedDB
     function openIDB() {
@@ -710,9 +684,6 @@
     function applySavedSettings() {
         applyBg(saved.bgMode || 'light');
         if (saved.layoutH === '1') toggleLayout();
-        const p = saved.folderPath || '';
-        document.getElementById('folderPathDisplay').textContent = p ? '📁 ' + p : '📁 未配置';
-        document.getElementById('folderPathDisplay').title = p;
     }
 
     document.getElementById('bgToggle').addEventListener('click', () => {
@@ -847,7 +818,10 @@
     async function pickDataFolder() {
         if (FSA_OK) {
             try {
-                const handle = await window.showDirectoryPicker();
+                const opts = {};
+                const prev = await idbGet('data-dir-handle');
+                if (prev) opts.startIn = prev;
+                const handle = await window.showDirectoryPicker(opts);
                 await connectDataDirHandle(handle);
                 return;
             } catch (e) { /* 不支持或用户取消 */ }
@@ -858,6 +832,8 @@
     // FSA 目录 handle 连接+持久化
     async function connectDataDirHandle(handle, storeToIDB = true) {
         if (storeToIDB) await idbSet('data-dir-handle', handle);
+        document.getElementById('folderPathDisplay').textContent = '📁 ' + handle.name;
+        document.getElementById('folderPathDisplay').title = handle.name;
         const entries = [];
         for await (const entry of handle.values()) {
             if (entry.kind === 'file' && /\.(json|txt)$/i.test(entry.name)) entries.push(entry);
@@ -892,29 +868,7 @@
         } catch (e) {}
     }
 
-    // 按钮绑定
-    document.getElementById('browseFolderBtn').addEventListener('click', pickDataFolder);
-
-    // ---- 文件夹路径配置（手动输入，写入 settings.json）----
-    function showFolderDialog() {
-        document.getElementById('folderPathInput').value = saved.folderPath || '';
-        document.getElementById('folderDialog').classList.remove('hidden');
-        document.getElementById('folderPathInput').focus();
-    }
-    document.getElementById('folderPathDisplay').addEventListener('click', showFolderDialog);
-    document.getElementById('reloadFolderBtn').addEventListener('click', showFolderDialog);
-    document.getElementById('folderDialogOk').addEventListener('click', () => {
-        const path = document.getElementById('folderPathInput').value.trim();
-        if (!path) return;
-        saved.folderPath = path;
-        document.getElementById('folderPathDisplay').textContent = '📁 ' + path;
-        document.getElementById('folderPathDisplay').title = path;
-        document.getElementById('folderDialog').classList.add('hidden');
-        flushSettings();
-    });
-    document.getElementById('folderDialogCancel').addEventListener('click', () => {
-        document.getElementById('folderDialog').classList.add('hidden');
-    });
+    document.getElementById('folderPathDisplay').addEventListener('click', pickDataFolder);
 
     // ════════════════════════════════════════════════
     //  初始化
@@ -940,7 +894,7 @@
         updateFileBar();
 
         // 默认占位
-        document.getElementById('folderPathDisplay').textContent = '📁 未配置';
+        document.getElementById('folderPathDisplay').textContent = '📁 选择文件夹';
         document.getElementById('fileList').innerHTML = '<div style="padding:20px 8px;text-align:center;color:#999;font-size:12px">拖入文件夹，或点击「浏览」选择</div>';
 
         if (!FSA_OK) return;
