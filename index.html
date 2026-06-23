@@ -1140,7 +1140,7 @@
             });
             const notesHtml = notesList.length
                 ? `<div class="compact-notes">${notesList.map(n =>
-                    `<div class="compact-note"><strong class="note-panel">${n.panel}${n.comp}</strong> ${n.note}</div>`
+                    `<div class="compact-note"><strong class="note-panel">${n.panel}-${n.comp}</strong> ${n.note}</div>`
                 ).join('')}</div>`
                 : '';
 
