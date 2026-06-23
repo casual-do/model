@@ -360,8 +360,6 @@
         }
 
         /* 通用视图卡片拖拽 */
-        .ccard.dragging { opacity: 0.4; }
-        .ccard.drag-over { outline: 2px dashed #1677ff; outline-offset: -2px; }
         .ccard { cursor: grab; }
         .ccard:active { cursor: grabbing; }
 
@@ -481,6 +479,8 @@
     </style>
 </head>
 <body>
+
+<script src="Sortable.min.js"></script>
 
 <div class="header">
     <div id="toggleFileList" class="neu-btn">文件</div>
@@ -1070,10 +1070,7 @@
     }
 
     // ---- 紧凑视图：按部位 → 板件行 → 编号芯片（数量>1 右上角角标）----
-    // 通用视图拖拽排序
-    let dragSrcPart = null;
-
-    function savePartOrder() {
+    function saveSortOrder() {
         const el = document.getElementById('viewCompact');
         const order = Array.from(el.children).map(c => c.dataset.part).filter(Boolean);
         const key = (saved.lastFile || '');
@@ -1142,36 +1139,12 @@
       </div>
       <div class="ccard-body">${panelRows}${notesHtml}</div>`;
             el.appendChild(card);
-
-            // 拖拽绑定
-            card.draggable = true;
-            card.addEventListener('dragstart', e => {
-                dragSrcPart = part;
-                card.classList.add('dragging');
-                e.dataTransfer.effectAllowed = 'move';
-            });
-            card.addEventListener('dragend', () => {
-                card.classList.remove('dragging');
-                document.querySelectorAll('.ccard').forEach(c => c.classList.remove('drag-over'));
-            });
-            card.addEventListener('dragover', e => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                card.classList.add('drag-over');
-            });
-            card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
-            card.addEventListener('drop', e => {
-                e.preventDefault();
-                card.classList.remove('drag-over');
-                if (dragSrcPart === part) return;
-                const all = Array.from(el.children);
-                const src = all.find(c => c.dataset.part === dragSrcPart);
-                const tgt = all.find(c => c.dataset.part === part);
-                if (!src || !tgt) return;
-                if (src.compareDocumentPosition(tgt) & Node.DOCUMENT_POSITION_FOLLOWING) tgt.after(src);
-                else tgt.before(src);
-                savePartOrder();
-            });
+        });
+        // SortableJS 拖拽排序
+        new Sortable(el, {
+            animation: 200,
+            easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+            onEnd: saveSortOrder,
         });
     }
 
