@@ -24,8 +24,7 @@
 
             /* 最终自动生成的完美拟态阴影 8 8 16*/
             /* 最终自动生成的完美拟态阴影 6 6 12*/
-            --neu-shadow: 6px 6px 12px var(--shadow-dark),
-            -6px -6px 12px var(--shadow-light);
+            --neu-shadow: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
 
             --neu-inset-shadow: inset 1.5px 1.5px 3px var(--shadow-dark),
             inset -1.5px -1.5px 3px var(--shadow-light);
@@ -166,7 +165,7 @@
 
         /* 表头：灰色小字，不换行 */
         th {
-            color: var(--text-color);
+            color: var(--text-color, #888);
             font-weight: normal;
             font-size: 11px;
             padding: 2px 5px;
@@ -248,9 +247,14 @@
             margin-top: 1px;
         }
 
-        /* 有 tooltip 的 chip 加虚线下划线提示可悬停 */
+        /* 有 tooltip 的 chip 加虚线下划线提示可悬停，并加粗字体，强调颜色 */
         .chip[title] {
-            text-decoration: underline dotted currentColor;
+            font-weight: bold;
+            text-decoration: underline dotted;
+            text-underline-offset: 2px;
+            text-decoration-color: var(--chip-tip-color);
+            color: var(--chip-tip-color) !important;
+            box-shadow: inset 0 0 0 1px var(--chip-tip-color);
             text-underline-offset: 2px;
         }
 
@@ -345,27 +349,23 @@
             line-height: 1.5;
             white-space: nowrap;
         }
-
-        /* 数量角标（仅数量>1时渲染），红底白字圆形 */
-        .chip sup {
-            font-size: 8px;
-            font-weight: lighter;
-            color: #ececec;
-            position: absolute;
-            top: -3px;
-            right: -5px;
-            background: rgb(0 0 0 / 0.56);
-            border-radius: 3px; /* 圆形；改为 0 = 方形，3px = 圆角方形 */
-            width: 10px;
-            height: 10px;
-            line-height: 10px;
-            text-align: center;
-            padding: 0;
+        .chip:has(+ .chip-qty) {
+            border-radius: 3px 0 0 3px;
+            margin-right: -3px;
         }
 
-        /* 有角标的芯片右侧留出空间，避免角标被遮挡 */
-        .chip.has-sup {
-            margin-right: 6px;
+        /* 数量标签（数量>1时显示），重叠拼接到 chip 右侧 */
+        .chip-qty {
+            display: inline-flex;
+            align-items: center;
+            font-size: 8px;
+            /*font-weight: 600;*/
+            color: var(--qty-color);
+            background: var(--qty-bg);
+            border-radius: 0 3px 3px 0;
+            line-height: 1;
+            padding: 0 3px;
+            margin-left: -1px;
         }
 
         /* 通用视图卡片拖拽 */
@@ -632,6 +632,8 @@
             const w = await settingsHandle.createWritable();
             await w.write(JSON.stringify(saved, null, 2));
             await w.close();
+            const dot = document.querySelector('.fb-dot.green');
+            if (dot) { dot.classList.remove('flash'); dot.offsetWidth; dot.classList.add('flash'); }
         } catch (e) { /* 权限丢失 */ }
     }
 
@@ -689,27 +691,32 @@
         saved.bgMode = isLight ? 'light' : 'dark';
         const root = document.documentElement;
         root.style.setProperty('--page-bg', isLight ? LIGHT_BG : DARK_BG);
-        root.style.setProperty('--accent', isLight ? '#1677ff' : '#66b0ff');
-        root.style.setProperty('--text-color', '#333');
-        root.style.setProperty('--brightness', isLight ? '1' : '0.7');
+        root.style.setProperty('--accent', isLight ? '#1677ff' : '#b65de2');
+        root.style.setProperty('--chip-tip-color', isLight ? '#e74c3c' : '#2ecc71');
+        root.style.setProperty('--qty-bg', isLight ? '#ccc' : '#b65de2');
+        root.style.setProperty('--text-color', isLight ? '#333' : '#fff'); /* 作用域：所有元素，用于：文本颜色 */
+        root.style.setProperty('--accent', isLight ? '#1677ff' : '#b65de2'); /* 作用域：所有元素，用于：强调颜色 */
+        root.style.setProperty('--brightness', isLight ? '1' : '0.75');
+    }
+
+    function setLayout(state) {
+        const btn = document.getElementById('layoutToggle');
+        const el = document.getElementById('viewCompact');
+        el.classList.remove('horizontal', 'flex');
+        if (state === '1') { el.classList.add('horizontal'); btn.textContent = '紧'; }
+        else if (state === '2') { el.classList.add('flex'); btn.textContent = '横'; }
+        else btn.textContent = '竖';
+        saved.layoutH = state;
     }
 
     function toggleLayout() {
-        const btn = document.getElementById('layoutToggle');
-        const el = document.getElementById('viewCompact');
         const cur = saved.layoutH || '0';
-        const next = cur === '0' ? '1' : cur === '1' ? '2' : '0';
-        el.classList.remove('horizontal', 'flex');
-        if (next === '1') { el.classList.add('horizontal'); btn.textContent = '紧'; }
-        else if (next === '2') { el.classList.add('flex'); btn.textContent = '横'; }
-        else btn.textContent = '竖';
-        saved.layoutH = next;
+        setLayout(cur === '0' ? '1' : cur === '1' ? '2' : '0');
     }
 
     function applySavedSettings() {
         applyBg(saved.bgMode || 'light');
-        const h = saved.layoutH || '0';
-        if (h !== '0') toggleLayout();
+        setLayout(saved.layoutH || '0');
     }
 
     document.getElementById('bgToggle').addEventListener('click', () => {
@@ -910,6 +917,8 @@
             .fb-dot.green  { background:#27ae60 }
             .fb-dot.orange { background:#e67e22 }
             .fb-dot.red    { background:#e74c3c }
+            .fb-dot.flash { animation: flashDot .4s ease-out; }
+            @keyframes flashDot { 0%{background:#27ae60} 30%{background:#e74c3c} 70%{background:#e74c3c} 100%{background:#27ae60} }
         `;
         document.head.appendChild(style);
 
@@ -1120,8 +1129,7 @@
             const panelRows = panelOrder.map((pno, idx) => {
                 const chips = panelMap[pno].map(i => {
                     const qty = Number(i.comp_count);
-                    const hasSup = qty > 1;
-                    return `<span class="chip${hasSup ? ' has-sup' : ''}" style="background:${color}10;color:${color}"${i.notes ? ` title="${i.notes}"` : ''}>${i.comp_no}${hasSup ? `<sup>${qty}</sup>` : ''}</span>`;
+                    return `<span class="chip${i.notes ? ' has-note' : ''}" style="background:${color}10;color:${color}"${i.notes ? ` title="${i.notes}"` : ''}>${i.comp_no}</span>${qty > 1 ? `<span class="chip-qty">${qty}</span>` : ''}`;
                 }).join('');
                 const divider = idx > 0 ? `<div style="border-top:1px solid ${color}50;margin:1px 0"></div>` : '';
                 return `${divider}<div class="panel-row">
