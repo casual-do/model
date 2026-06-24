@@ -18,16 +18,15 @@
 
             /* ========== 2. 下面全部自动计算，不用动 ========== */
             /* 阴影：背景色加深 13% */
-            --shadow-dark: color-mix(in srgb, var(--page-bg), #000 15%);
+            --shadow-dark: color-mix(in srgb, var(--page-bg), #000 20%);
             /* 高光：背景色提亮 10% */
             --shadow-light: color-mix(in srgb, var(--page-bg), #fff 20%);
 
-            /* 最终自动生成的完美拟态阴影 8 8 16*/
-            /* 最终自动生成的完美拟态阴影 6 6 12*/
-            --neu-shadow: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
-
-            --neu-inset-shadow: inset 1.5px 1.5px 3px var(--shadow-dark),
-            inset -1.5px -1.5px 3px var(--shadow-light);
+            /* 拟态阴影 - 增强版：更大的偏移和模糊，效果更明显 */
+            --neu-shadow: -4px -4px 12px var(--shadow-dark), 4px 4px 12px var(--shadow-light);
+            --neu-inset-shadow: inset 2px 2px 4px var(--shadow-dark), inset -2px -2px 4px var(--shadow-light);
+            /* 卡片边框颜色 - 与背景色协调 */
+            --card-border: color-mix(in srgb, var(--page-bg), #000 10%);
         }
 
         /* ===== 页面基础 ===== */
@@ -210,12 +209,22 @@
         /* ===== 按部位视图：板件分组交替灰度 ===== */
         /* 偶数板件组 */
         .pg0 td {
-            background: color-mix(in srgb, var(--page-bg), #fff 82%);
+            background: color-mix(in srgb, var(--page-bg), #fff 90%);
+            color: #000;
         }
 
         /* 奇数板件组，与 pg0 交替产生分组视觉 */
         .pg1 td {
-            background: color-mix(in srgb, var(--page-bg), #000 4%);
+            background: color-mix(in srgb, var(--page-bg), var(--text-color) 10%);
+            color: var(--text-color);
+        }
+
+        /* 深浅交替行内备注颜色自动适配 */
+        .pg0 .note-text {
+            color: color-mix(in srgb, var(--compact-note-color), #000 40%);
+        }
+        .pg1 .note-text {
+            color: var(--compact-note-color);
         }
 
         /* 数量列：居中加粗 */
@@ -227,24 +236,36 @@
 
         /* 次要信息（如板件号）：浅灰小字 */
         .muted {
-            color: var(--text-color);
+            color: var(--muted-color, #999);
             font-size: 11px;
-            opacity: 0.56;
         }
 
         /* 编号列：中等字重 */
         .comp-label {
             font-weight: 500;
         }
+        /* 按板件视图编号列使用全黑 */
+        #viewPanel .comp-label,
+        #viewPanel .parts-cell,
+        #viewPanel .qty {
+            color: #000;
+        }
 
         /* 备注小字（按部位/按板件表格内） */
         .note-text {
             font-size: 10px;
-            color: #f59e0b;
+            color: var(--compact-note-color);
             font-weight: normal;
             white-space: normal;
             line-height: 1.3;
-            margin-top: 1px;
+        }
+        .note-row td {
+            border-bottom: none;
+            padding-top: 0;
+            padding-left: 20px;
+        }
+        .note-row .note-text {
+            color: color-mix(in srgb, var(--compact-note-color), #000 50%);
         }
 
         /* 有 tooltip 的 chip 加虚线下划线提示可悬停，并加粗字体，强调颜色 */
@@ -284,11 +305,11 @@
             flex: 0 0 auto;
         }
 
-        /* 紧凑卡片，拟态效果 */
+        /* 紧凑卡片，拟态效果（增强版） */
         .ccard {
             background: var(--page-bg, #f0f2f5);
-            border: none;
-            border-radius: 7px;
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
             overflow: hidden;
             box-shadow: var(--neu-shadow);
         }
@@ -349,9 +370,10 @@
             line-height: 1.5;
             white-space: nowrap;
         }
-        .chip:has(+ .chip-qty) {
+        /* chip 后面有数量标签时，右侧直角与 qty 拼接 */
+        .chip.has-qty {
             border-radius: 3px 0 0 3px;
-            margin-right: -3px;
+            margin-right: -2px;
         }
 
         /* 数量标签（数量>1时显示），重叠拼接到 chip 右侧 */
@@ -360,7 +382,7 @@
             align-items: center;
             font-size: 8px;
             /*font-weight: 600;*/
-            color: var(--qty-color);
+            /*color: var(--qty-color);*/
             background: var(--qty-bg);
             border-radius: 0 3px 3px 0;
             line-height: 1;
@@ -380,7 +402,7 @@
         }
         .compact-note {
             font-size: 10px;
-            color: #f59e0b;
+            color: var(--compact-note-color);
             line-height: 1.4;
             padding: 1px 0;
         }
@@ -420,7 +442,7 @@
         /* 总数标签内的数字，蓝色加粗 */
         .total-badge .tb-num {
             font-weight: bold;
-            color: #1677ff;
+            color: var(--accent, #1677ff);
         }
 
         /* ===== 布局 ===== */
@@ -430,7 +452,7 @@
             transition: filter 0.2s;
         }
 
-        /* ===== 文件列表悬浮面板（左侧固定，header 下方起始）===== */
+        /* ===== 文件列表悬浮面板 ===== */
         .sidebar {
             position: fixed;
             top: 44px;
@@ -497,7 +519,7 @@
     <div id="currentFile" class="hidden"></div>
     <div class="tabs">
         <div id="statsBar" class="total-badge hidden"></div>
-        <div class="tab active" data-view="compact">通用</div>
+        <div class="tab" data-view="compact">通用</div>
         <div class="tab" data-view="part">部位</div>
         <div class="tab" data-view="panel">板件</div>
         <div id="bgToggle" class="neu-btn" title="切换明暗背景">白</div>
@@ -555,7 +577,7 @@
             !sidebar.contains(e.target) &&
             !btn.contains(e.target)) {
             sidebar.classList.add('hidden');
-            btn.classList.remove('active');
+                btn.classList.remove('active');
         }
     });
 
@@ -566,7 +588,7 @@
     const FILE_TYPES = [{ description: '设置文件', accept: { 'application/json': ['.json'] } }];
 
     let settingsHandle = null;
-    let saved = { bgMode: 'light', layoutH: '0', lastFile: '' };
+    let saved = { bgMode: 'light', layoutH: '0', lastFile: '', lastView: 'compact' };
 
     // IndexedDB
     function openIDB() {
@@ -682,7 +704,7 @@
         bar.append(mkEl('span', 'fb-dot green'), mkEl('span', '', { textContent: settingsHandle.name }));
     }
 
-    const LIGHT_BG = '#f5f0eb', DARK_BG = '#000000';
+    const LIGHT_BG = '#f5f0eb', DARK_BG = '#303030';
 
     function applyBg(mode) {
         const isLight = mode !== 'dark';
@@ -691,11 +713,12 @@
         saved.bgMode = isLight ? 'light' : 'dark';
         const root = document.documentElement;
         root.style.setProperty('--page-bg', isLight ? LIGHT_BG : DARK_BG);
-        root.style.setProperty('--accent', isLight ? '#1677ff' : '#b65de2');
         root.style.setProperty('--chip-tip-color', isLight ? '#e74c3c' : '#2ecc71');
         root.style.setProperty('--qty-bg', isLight ? '#ccc' : '#b65de2');
-        root.style.setProperty('--text-color', isLight ? '#333' : '#fff'); /* 作用域：所有元素，用于：文本颜色 */
-        root.style.setProperty('--accent', isLight ? '#1677ff' : '#b65de2'); /* 作用域：所有元素，用于：强调颜色 */
+        root.style.setProperty('--text-color', isLight ? '#333' : '#fff');
+        root.style.setProperty('--muted-color', isLight ? '#999' : '#bbb');
+        root.style.setProperty('--accent', isLight ? '#1677ff' : '#b65de2');
+        root.style.setProperty('--compact-note-color', isLight ? '#f60000' : '#2eff00');
         root.style.setProperty('--brightness', isLight ? '1' : '0.75');
     }
 
@@ -717,6 +740,13 @@
     function applySavedSettings() {
         applyBg(saved.bgMode || 'light');
         setLayout(saved.layoutH || '0');
+        switchView(saved.lastView || 'compact');
+    }
+
+    function switchView(v) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
+        VIEWS.forEach(id => document.getElementById('view' + id[0].toUpperCase() + id.slice(1)).classList.toggle('hidden', v !== id));
+        saved.lastView = v;
     }
 
     document.getElementById('bgToggle').addEventListener('click', () => {
@@ -732,9 +762,8 @@
     const VIEWS = ['compact', 'part', 'panel'];
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
-            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
-            const v = tab.dataset.view;
-            VIEWS.forEach(id => document.getElementById('view' + id[0].toUpperCase() + id.slice(1)).classList.toggle('hidden', v !== id));
+            switchView(tab.dataset.view);
+            flushSettings();
         });
     });
 
@@ -976,7 +1005,8 @@
     }
 
     // 将颜色与背景混合，使其随背景色自动适配
-    function blend(color, pct = 15) {
+    function blend(color, pct) {
+        if (pct === undefined) pct = (saved.bgMode === 'dark') ? 5 : 15;
         return `color-mix(in srgb, ${color}, var(--page-bg) ${pct}%)`;
     }
 
@@ -1073,10 +1103,10 @@
 
                 const rows = merged.map(r => `
         <tr>
-          <td class="comp-label">${r.comp_no}${r.notes ? `<div class="note-text">${r.notes}</div>` : ''}</td>
+          <td class="comp-label">${r.comp_no}</td>
           <td class="parts-cell">${r.parts.map(p => `<span class="part-tag" style="background:${blend(getColor(p))};color:#fff">${p}</span>`).join('')}</td>
           <td class="qty">${r.count}</td>
-        </tr>`).join('');
+        </tr>${r.notes ? `<tr class="note-row"><td colspan="3"><div class="note-text">${r.notes}</div></td></tr>` : ''}`).join('');
 
                 const card = document.createElement('div');
                 card.className = 'card';
@@ -1129,7 +1159,10 @@
             const panelRows = panelOrder.map((pno, idx) => {
                 const chips = panelMap[pno].map(i => {
                     const qty = Number(i.comp_count);
-                    return `<span class="chip${i.notes ? ' has-note' : ''}" style="background:${color}10;color:${color}"${i.notes ? ` title="${i.notes}"` : ''}>${i.comp_no}</span>${qty > 1 ? `<span class="chip-qty">${qty}</span>` : ''}`;
+                    const hasQty = qty > 1;
+                    return `<span style="display:inline-flex;align-items:stretch">
+  <span class="chip${i.notes ? ' has-note' : ''}${hasQty ? ' has-qty' : ''}" style="background:${color}10;color:${color}"${i.notes ? ` title="${i.notes}"` : ''}>${i.comp_no}</span>${hasQty ? `<span class="chip-qty">${qty}</span>` : ''}
+</span>`;
                 }).join('');
                 const divider = idx > 0 ? `<div style="border-top:1px solid ${color}50;margin:1px 0"></div>` : '';
                 return `${divider}<div class="panel-row">
