@@ -26,7 +26,7 @@
             --neu-shadow: -4px -4px 12px var(--shadow-dark), 4px 4px 12px var(--shadow-light);
             --neu-inset-shadow: inset 2px 2px 4px var(--shadow-dark), inset -2px -2px 4px var(--shadow-light);
             /* 卡片边框颜色 - 与背景色协调 */
-            --card-border: color-mix(in srgb, var(--page-bg), #000 10%);
+            --card-border: color-mix(in srgb, var(--page-bg), #000 20%);
         }
 
         /* ===== 页面基础 ===== */
@@ -309,6 +309,7 @@
         .ccard {
             background: var(--page-bg, #f0f2f5);
             border: 1px solid var(--card-border);
+
             border-radius: 10px;
             overflow: hidden;
             box-shadow: var(--neu-shadow);
@@ -373,7 +374,6 @@
         /* chip 后面有数量标签时，右侧直角与 qty 拼接 */
         .chip.has-qty {
             border-radius: 3px 0 0 3px;
-            margin-right: -2px;
         }
 
         /* 数量标签（数量>1时显示），重叠拼接到 chip 右侧 */
@@ -387,7 +387,6 @@
             border-radius: 0 3px 3px 0;
             line-height: 1;
             padding: 0 3px;
-            margin-left: -1px;
         }
 
         /* 通用视图卡片拖拽 */
@@ -720,6 +719,7 @@
         root.style.setProperty('--accent', isLight ? '#1677ff' : '#b65de2');
         root.style.setProperty('--compact-note-color', isLight ? '#f60000' : '#2eff00');
         root.style.setProperty('--brightness', isLight ? '1' : '0.75');
+        root.style.setProperty('--card-border-color', isLight ? 'rgb(0 0 0 / 0.4)' : '#000000');
     }
 
     function setLayout(state) {
